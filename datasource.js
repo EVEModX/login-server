@@ -9,11 +9,11 @@ var db=sqlite3.Database(__dirname+"/test.sqlite3");
 var User=function (data){
     this.data=data;
 };
-User.prototype.data={};
-User.prototype.changeNickname=function(newname){
+User.data={};
+User.changeNickname=function(newname){
     this.data.nickname=newname;
 };
-User.prototype.save=function(callback){ //把用户数据写回数据库
+User.save=function(callback){ //把用户数据写回数据库
 
 };
 
@@ -23,7 +23,7 @@ User.findById=function (id,callback) {  //通过ID找到用户
         if (err) callback(err);
         //TODO:新建一个User实例，把数据弄进这个实例
         if (row===undefined) //没用找到对应用户
-            callback();//TODO:告诉callback没有对应用户
+            callback(null,undefined);//TODO:告诉callback没有对应用户
         callback(null,new User(row));
     });
 };
@@ -34,7 +34,7 @@ User.findById=function (id,callback) {  //通过ID找到用户
 User.findByName=function (name,callback){
     var stmt=db.prepare("SELECT * FROM users WHERE username=(?)");
     stmt.get(name,function(err,row){
-
+        //TODO:实现
     });
 };
 /*User.findByToken=function (token,callback){
