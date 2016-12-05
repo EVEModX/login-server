@@ -2,12 +2,31 @@
 <head>
     <meta charset="utf-8" />
     <title>用户登录</title>
+    <script src="http://ajax.aspnetcdn.com/ajax/jQuery/jquery-3.1.1.min.js"></script>
 </head>
+<script>
+    function submit(){
+        var postdata={};
+        postdata.username=jQuery.('input#username').data;
+        postdata.password=jQuery.('input#password').data;
+        jQuery.post('./login',postdata.stringify(),function (data,status){
+            if (status===200){
+                if (data.error!==undefined) {
+                    jQuery.cookie("username",data.username);
+                    jQuery.cookie("token",data.token);
+                    jQuery.("#result").innerHTML="登录成功";
+                    window.location="/index.html";
+                }
+            }
+        });
+    }
+</script>
 <body>
-<form>
-    <input type="text" name="username" />
-    <input type="password" name="password">
-
+<form id="login">
+    用户名 <input type="text" name="username" /><br/>
+    密码 <input type="password" name="password"/> <br/>
+    <input type="button" name="submit" action="submit()" value="登录"/>
 </form>
+<span id="result"></span>
 </body>
 </html>
