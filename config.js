@@ -8,5 +8,5 @@ config.server.listenport= process.env.WEB_PORT || 8080; // web server 监听端�
 
 config.security={};
 config.security.tokenLivetime=60*60*24*3; //秒
-
+config.security.pbkdf2_iter=100000;
 module.exports=config;

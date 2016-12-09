@@ -11,7 +11,7 @@
     if (token===null)
         jQuery.("#username").innerHTML="游客";
     else {
-        jQuery.post("./user/getinfo",{username:username,token:token},function (data,status){
+        jQuery.post("./user/getinfo",{username:username,token:token,username_req:username},function (data,status){
             if (status===200){
                 var user=jQuery.parseJSON(data);
                 if (data.error===undefined) {

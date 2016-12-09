@@ -1,2 +1,5 @@
 .idea/
 node_modules/
+*.log
+tmp.js
+*.sqlite3

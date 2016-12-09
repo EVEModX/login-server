@@ -4,3 +4,13 @@
 /*
 * 用户信息处理模块
 * */
+var express=require("express");
+var data=require("./datasource");
+var router=express.Router();
+
+/*
+* 获取用户信息
+* */
+function getUserinfo(req,resp){
+
+}

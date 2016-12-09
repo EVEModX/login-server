@@ -31,3 +31,24 @@
 * `msg` 附加信息
 
 错误返回 403
+
+##用户相关
+
+### `/user/getinfo` 获取用户信息
+
+* `username_req` / `userid_req` 请求的用户名/ID 只需要指定一个
+* 附加身份验证信息
+
+返回
+
+* `userinfo` json编码用户信息
+
+### `/user/setinfo` 设置用户信息
+
+* `username_req` / `userid_req` 请求的用户名/ID 只需要指定一个
+* `userinfo` json编码用户信息
+
+返回
+
+HTTP状态码
+

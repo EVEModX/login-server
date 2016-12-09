@@ -75,6 +75,9 @@ function logout(req,resp) { //实质为注销token
         });
     });
 }
+function changepassword(req,resp){
+    //TODO:实现
+}
 function validate(req,resp,next){ //检查request的权限是否正确
     var username=req.body.username,
         token=req.body.token;
@@ -96,4 +99,5 @@ router.use(validate); //
 router.post('/login',login);
 router.post('/logout',logout);
 router.post('/renew',login);
+router.post('/changepassword',changepassword);
 module.exports=router;
