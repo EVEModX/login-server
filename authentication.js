@@ -17,10 +17,10 @@ function login(req,resp){ //负责给新的token，包括续期token
     if (req.baseUrl==="/login"){ //登录
         data.User.findByName(username,function (err,user){
             if (err) throw err;
-            if (user!==undefined && user.checkpass(password)) {
+            if (user!==undefined && user.checkPass(password)) {
                 crypto.randomBytes(8,function(err,buf){ //64bit token 应该足够
                     if (err) throw (err);
-                    var expiretime=Math.floor(Date.now() / 1000)+config.security.tokenLivetime
+                    var expiretime=Math.floor(Date.now() / 1000)+config.security.tokenLivetime;
                     user.setToken(buf,expiretime,function(err){
                         if (err) throw (err);
                         resp.type("json");

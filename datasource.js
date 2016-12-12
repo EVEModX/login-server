@@ -32,9 +32,8 @@ User.findById=function (id,callback) {  //通过ID找到用户
     var stmt=db.prepare("SELECT * FROM users WHERE userid=(?)");
     stmt.get(id,function(err,row){
         if (err) callback(err);
-        //TODO:新建一个User实例，把数据弄进这个实例
-        if (row===undefined) //没用找到对应用户
-            callback(null,undefined);//TODO:告诉callback没有对应用户
+        if (row===undefined) //没有找到对应用户
+            callback(null,undefined);
         callback(null,new User(row));
     });
 };
@@ -45,7 +44,11 @@ User.findById=function (id,callback) {  //通过ID找到用户
 User.findByName=function (name,callback){
     var stmt=db.prepare("SELECT * FROM users WHERE username=(?)");
     stmt.get(name,function(err,row){
-        //TODO:实现
+        if (err)
+            return callback(err);
+        if (row===undefined)
+            return callback(null,undefined);
+        callback(null,new User(row));
     });
 };
 /*
@@ -84,15 +87,39 @@ User.prototype.setPass=function (plainpass){  //设置用户密码
         });
     });
 };
-User.prototype.setToken=function (token,expire){ //设定用户的token token:token expire:过期时间(UTC表示)
-    this.data.token=token;
-    this.data.token_expire=expire;
+User.prototype.requireToken=function (expire,callback){ //请求一个用户的token userid:用户ID expire:过期时间(UTC表示)
+    var that=this;
+    crypto.randomBytes(16,function(err,buf){
+        if (err) return callback(err);
+        db.run("INSERT into tokens (token,expiretime,userid) VALUES(?,?,?)",[buf.toString('hex'),expire,that.data.userid],function(err){
+            if (err===null) return callback(null,buf);
+            if (err.code==="SQLITE_CONSTRAINT") //有重复的token
+                return this.requireToken(expire,callback);
+            else
+                callback(err);
+        });
+    });
 };
-User.prototype.clearToken=function (){ //清除用户的token
-    //TODO:实现
+User.prototype.clearToken=function (token){ //清除用户的token
+    db.run("DELETE FROM tokens WHERE token=?",token,function(err){
+        if (err)
+            throw err;
+    });
 };
-User.prototype.checkToken=function (token){ //检查用户是否有这个token，返回 True/False 同步函数
-    //TODO:实现
+User.prototype.clearallToken=function(userid){
+    db.run("DELETE FROM tokens WHERE userid=?",userid,function(err){
+        if (err)
+            throw err;
+    });
+};
+User.prototype.checkToken=function (token,callback){ //检查这个token是不是属于自己
+    var that=this;
+    db.get("SELECT * FROM tokens WHERE token=?",token,function(err,row){
+        if (err)
+            callback(err);
+        if (row===undefined) callback(null,false);
+        else callback(null,row.userid===that.data.userid);
+    });
 };
 User.prototype.save=function(){ //把用户数据写回数据库
     db.run("BEGIN TRANSACTION");
