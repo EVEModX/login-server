@@ -48,20 +48,30 @@ User.findByName=function (name,callback){
             return callback(err);
         if (row===undefined)
             return callback(null,undefined);
+        if (new Date(row.expiretime)<new Date()){ //token过期
+            db.run("DELETE FROM tokens WHERE token=?",token,function(err) {
+                if (err)
+                    callback(err);
+                callback(null,undefined);
+            });
+        }
         callback(null,new User(row));
     });
 };
 /*
 * 通过已定义的token找到用户
+* 如果token过期，将token删除并返回错误
 * callback(err,user) user:返回的用户对象，找不到返回undefined
 * */
 User.findByToken=function (token,callback){
-    var stmt=db.prepare("SELECT * FROM tokens WHERE id=(?)");
-    stmt.get(token,function(err,row){
-        if (err) callback(err);
+    db.get("SELECT * FROM tokens WHERE token=?",token,function(err,row){
+        if (err)
+            callback(err);
         if (row===undefined)
             callback(null,undefined);
-        callback(null,new User(row));
+        User.findById(row.userid,function(err,user){
+            callback(err,user);
+        });
     });
 };
 User.prototype.checkPass=function (plainpass){ //检查password是不是用户的密码

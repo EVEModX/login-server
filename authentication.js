@@ -79,17 +79,22 @@ function changepassword(req,resp){
     //TODO:实现
 }
 function validate(req,resp,next){ //检查request的权限是否正确
-    var username=req.body.username,
-        token=req.body.token;
+    var token=req.body.token;
     console.log("Received validation req");
     if (req.baseUrl==="/login") next(); //登录请求不检查
-    data.User.findByName(username,function (err,user){
+    /*data.User.findByName(username,function (err,user){
         if (err) throw err;
         if (user===undefined || !user.checkToken(token)){ // token的有效期计时按照执行到datasource module的时间计算
             resp.type("json");
             resp.writeHead(403).json({msg:"Token is invalid"});
             resp.end();
-            return;
+        }
+    });*/
+    data.User.findByToken(token,function (err,user){
+        if (user===undefined){
+            resp.type("json");
+            resp.writeHead(403).json({msg:"Token is invalid or timed out"});
+            resp.end();
         }
     });
     //TODO:实现检查用户的权限和各个操作所需要的权限比对
