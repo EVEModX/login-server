@@ -19,7 +19,6 @@ function getUserinfo(req,resp){
             resp.end();
             return;
         }
-        resp.type("json");
         resp.writeHead(200).json(user);
     });
 }

@@ -66,11 +66,11 @@ User.findByName=function (name,callback){
 User.findByToken=function (token,callback){
     db.get("SELECT * FROM tokens WHERE token=?",token,function(err,row){
         if (err)
-            callback(err);
+            return callback(err);
         if (row===undefined)
-            callback(null,undefined);
+            return callback(null,undefined);
         User.findById(row.userid,function(err,user){
-            callback(err,user);
+            return callback(err,user);
         });
     });
 };

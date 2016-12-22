@@ -13,7 +13,7 @@ app.use('/user',userinfo); //用户信息模块
 app.get('/',function (req,res) {
     res.redirect("/index.html"); //前面的都不抓就返回index.html
 });
-app.use(express.static(__dirname+'/static')); //前面的都不抓说明请求的静态文件，返回
+app.use(express.static('static')); //前面的都不抓说明请求的静态文件，返回
 app.listen(cfg.server.listenport,function(){
     console.log("Server Started");
 });
