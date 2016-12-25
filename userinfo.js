@@ -15,11 +15,21 @@ function getUserinfo(req,resp){
     var requsername=req.body.username_req;
     data.User.findByName(requsername,function (err,user) {
         if (err){
-            resp.writeHead(500);
+            resp.status(500);
             resp.end();
             return;
         }
-        resp.writeHead(200).json(user);
+        if (user===undefined){
+            resp.status(404).write(JSON.stringify({error:"User not found"}));
+            resp.end();
+            return;
+        }
+        var userinfo={};
+        userinfo.username=user.data.username;
+        userinfo.nickname=user.data.nickname;
+        userinfo.userid=user.data.userid;
+        resp.status(200).write(JSON.stringify(userinfo));
+        resp.end();
     });
 }
 router.post('/getinfo',getUserinfo);

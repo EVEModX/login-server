@@ -3,29 +3,35 @@
     <meta charset="utf-8" />
     <title>用户登录</title>
     <script src="http://ajax.aspnetcdn.com/ajax/jQuery/jquery-3.1.1.min.js"></script>
+    <script src="./js.cookie.js"></script>
 </head>
 <script>
-    function submit(){
+    function login(){
         var postdata={};
-        postdata.username=jQuery.('input#username').data;
-        postdata.password=jQuery.('input#password').data;
-        jQuery.post('./login',postdata.stringify(),function (data,status){
-            if (status===200){
-                if (data.error!==undefined) {
-                    jQuery.cookie("username",data.username);
-                    jQuery.cookie("token",data.token);
-                    jQuery.("#result").innerHTML="登录成功";
-                    window.location="/index.html";
-                }
+        postdata.username=jQuery('input#username').val();
+        postdata.password=jQuery('input#password').val();
+        jQuery.post('./login',postdata)
+        .done(function (data){
+            var resp=JSON.parse(data);
+            if (resp.error===undefined) {
+                Cookies.set("username",postdata.username);
+                Cookies.set("token",resp.token);
+                Cookies.set("expiretime",resp.expiretime);
+                jQuery("#result").html("登录成功");
+                window.location="/index.html";
             }
+        }).fail(function(data){
+            console.log("error handle:"+data.status);
+            var resp=JSON.parse(data.responseText);
+            jQuery("#result").html(resp.error);
         });
     }
 </script>
 <body>
 <form id="login">
-    用户名 <input type="text" name="username" /><br/>
-    密码 <input type="password" name="password"/> <br/>
-    <input type="button" name="submit" action="submit()" value="登录"/>
+    用户名 <input type="text" id="username" /><br/>
+    密码 <input type="password" id="password"/> <br/>
+    <input type="button" name="submit" onclick="login()" value="登录"/>
 </form>
 <span id="result"></span>
 </body>

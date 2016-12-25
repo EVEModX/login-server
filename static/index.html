@@ -4,20 +4,19 @@
     <meta charset="UTF-8" />
     <title>实例主页</title>
     <script src="http://ajax.aspnetcdn.com/ajax/jQuery/jquery-3.1.1.min.js" ></script>
+    <script src="./js.cookie.js"></script>
 </head>
 <script>
-    var token=jQuery.cookie("token");
-    var username=jQuery.cookie("username");
+    var token=Cookies.get("token");
+    var username=Cookies.get("username");
     if (token===null)
-        jQuery.("#username").innerHTML="游客";
+        jQuery("#username").html("游客");
     else {
-        jQuery.post("./user/getinfo",{username:username,token:token,username_req:username},function (data,status){
-            if (status===200){
-                var user=jQuery.parseJSON(data);
-                if (data.error===undefined) {
-                    jQuery.("#username").innerHTML=user.name;
-                    jQuery.("a#login").remove();
-                }
+        jQuery.post("./user/getinfo",{username:username,token:token,username_req:username},function (data){
+            var user=jQuery.parseJSON(data);
+            if (data.error===undefined) {
+                jQuery("#username").html(user.nickname);
+                jQuery("a#login").remove();
             }
         });
     }

@@ -11,30 +11,33 @@ var router=express.Router();
 /*
 * login() 对req里面存在的登录请求做出反应
 * */
-function login(req,resp){ //负责给新的token，包括续期token
+function login(req,resp){ //负责给新的token，
+    console.log("processing login request:"+req.baseUrl);
     var username=req.body.username,
         password=req.body.password,
         token=req.body.token;
-    if (req.baseUrl==="/login"){ //登录
+    if (req.url==="/login"){ //登录
+        console.log("login():processing /login");
         data.User.findByName(username,function (err,user){
             if (err) throw err;
             if (user!==undefined && user.checkPass(password)) {
                 crypto.randomBytes(8,function(err,buf){ //64bit token 应该足够
                     if (err) throw (err);
                     var expiretime=Math.floor(Date.now() / 1000)+config.security.tokenLivetime;
-                    user.setToken(buf,expiretime,function(err){
+                    user.requireToken(expiretime,function(err,token){
                         if (err) throw (err);
-                        resp.writeHead(200).json({token:token,expiretime:expiretime});
+                        resp.status(200).write(JSON.stringify({token:token.toString('hex'),expiretime:expiretime,userid:user.data.userid}));
                         resp.end();
                     });
                 });
             }else{
-                resp.writeHead(403).json({error:"username and password mismatch"});
-                resp.type("json");
+                resp.status(403);
+                resp.write(JSON.stringify({error:"username and password mismatch"}));
+                resp.end();
             }
         });
     }
-    else if (req.baseUrl==="/renew"){ //续期token
+    else if (req.url==="/renew"){ //续期token
         data.User.findByName(username,function (err,user){
             if (err) throw err;
             if (user!==undefined && user.checkToken(token)){
@@ -43,30 +46,40 @@ function login(req,resp){ //负责给新的token，包括续期token
                     var expiretime=Math.floor(Date.now() / 1000)+config.security.tokenLivetime
                     user.setToken(buf,expiretime,function(err){
                         if (err) throw (err);
-                        resp.writeHead(200).json({token:token,expiretime:expiretime});
+                        resp.status(200).write(JSON.stringify({token:token,expiretime:expiretime}));
                         resp.end();
                     });
                 });
             }else{
-                resp.writeHead(403).json({error:"Token is invalid"});
+                resp.status(403).write(JSON.stringify({error:"Token is invalid"}));
                 resp.end();
             }
         });
+    }
+    else{ //操作不支持
+        resp.status(500);
+        resp.write(JSON.stringify({error:"operation not implemented."}));
+        resp.end();
     }
 }
 function logout(req,resp) { //实质为注销token
     var username=req.body.username,
         token=req.body.token;
     data.User.findByName(username,function(err,user){
-        if (err) throw err;
+        if (err){
+            resp.status(500);
+            resp.write(JSON.stringify({error:"Internal Server Error"}));
+            resp.end();
+            return;
+        }
         if (user===undefined || !user.checkToken(token)){
-            resp.writeHead(403).json({error:"Token is invalid"});
+            resp.status(403).write(JSON.stringify({error:"Token is invalid"}));
             resp.end();
             return;
         }
         user.clearToken(function(err){
             if (err) throw err;
-            resp.writeHead(200).json({msg:"Token successfully cleared"});
+            resp.status(200).write(JSON.stringify({msg:"Token successfully cleared"}));
             resp.end();
         });
     });
@@ -81,6 +94,8 @@ function validate(req,resp,next){ //检查request的权限是否正确
     if (req.originalUrl==="/login") next(); //登录请求不检查
     else if (req.originalUrl==="/") next();
     else if (req.originalUrl.endsWith(".html")) next();
+    else if (req.originalUrl.endsWith(".js")) next();
+    else if (req.originalUrl.endsWith(".css")) next();
     /*data.User.findByName(username,function (err,user){
         if (err) throw err;
         if (user===undefined || !user.checkToken(token)){ // token的有效期计时按照执行到datasource module的时间计算
@@ -91,7 +106,12 @@ function validate(req,resp,next){ //检查request的权限是否正确
     });*/
     else{
         data.User.findByToken(token,function (err,user){
-            if (user===undefined){
+            if (err){
+                resp.status(500);
+                resp.write(JSON.stringify({error:"Internal Server Error"}));
+                resp.end();
+            }
+            else if (user===undefined){
                 resp.status(403);
                 resp.write(JSON.stringify({msg:"Token is invalid or timed out"}));
                 resp.end();

@@ -44,16 +44,22 @@ User.findById=function (id,callback) {  //通过ID找到用户
 User.findByName=function (name,callback){
     var stmt=db.prepare("SELECT * FROM users WHERE username=(?)");
     stmt.get(name,function(err,row){
-        if (err)
-            return callback(err);
-        if (row===undefined)
-            return callback(null,undefined);
+        if (err){
+            callback(err);
+            return;
+        }
+        if (row===undefined){
+            callback(null,undefined);
+            return;
+        }
         if (new Date(row.expiretime)<new Date()){ //token过期
             db.run("DELETE FROM tokens WHERE token=?",token,function(err) {
                 if (err)
                     callback(err);
-                callback(null,undefined);
+                else
+                    callback(null,undefined);
             });
+            return;
         }
         callback(null,new User(row));
     });
@@ -66,22 +72,20 @@ User.findByName=function (name,callback){
 User.findByToken=function (token,callback){
     db.get("SELECT * FROM tokens WHERE token=?",token,function(err,row){
         if (err)
-            return callback(err);
-        if (row===undefined)
-            return callback(null,undefined);
-        User.findById(row.userid,function(err,user){
-            return callback(err,user);
-        });
+            callback(err);
+        else if (row===undefined)
+            callback(null,undefined);
+        else
+            User.findById(row.userid,function(err,user){
+                callback(err,user);
+            });
     });
 };
 User.prototype.checkPass=function (plainpass){ //检查password是不是用户的密码
     var password=this.data.password,
         salt=this.data.password_salt;
-    crypto.pbkdf2(plainpass,salt,config.security.pbkdf2_iter,16,'sha512',function(err,key){
-        if (err)
-            throw err;
-        return key === password;
-    });
+    var key=crypto.pbkdf2Sync(plainpass,salt,config.security.pbkdf2_iter,16,'sha512');
+    return Buffer.compare(password,key)===0;
 };
 User.prototype.setPass=function (plainpass){  //设置用户密码
     var that=this;
@@ -93,18 +97,17 @@ User.prototype.setPass=function (plainpass){  //设置用户密码
                 throw err;
             that.data.password=key;
             that.data.password_salt=buf;
-            return true;
         });
     });
 };
 User.prototype.requireToken=function (expire,callback){ //请求一个用户的token userid:用户ID expire:过期时间(UTC表示)
     var that=this;
     crypto.randomBytes(16,function(err,buf){
-        if (err) return callback(err);
+        if (err) callback(err);
         db.run("INSERT into tokens (token,expiretime,userid) VALUES(?,?,?)",[buf.toString('hex'),expire,that.data.userid],function(err){
-            if (err===null) return callback(null,buf);
-            if (err.code==="SQLITE_CONSTRAINT") //有重复的token
-                return this.requireToken(expire,callback);
+            if (err===null) callback(null,buf);
+            else if (err.code==="SQLITE_CONSTRAINT") //有重复的token
+                this.requireToken(expire,callback);
             else
                 callback(err);
         });
