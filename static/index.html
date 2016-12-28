@@ -7,6 +7,19 @@
     <script src="./js.cookie.js"></script>
 </head>
 <script>
+    function logout(){
+        var token=Cookies.get("token");
+        jQuery.post("./logout",{token:token,token_req:token},function (data) {
+            jQuery("#token").html("已清除");
+            Cookies.remove('token');
+            Cookies.remove('username');
+            window.location="/";
+            jQuery("a#login").css("display","block");
+            jQuery("a#logout").css("display","none");
+        }).fail(function (xhr) {
+            console.log("error on logout");
+        });
+    }
     var token=Cookies.get("token");
     var username=Cookies.get("username");
     if (token===null)
@@ -16,12 +29,15 @@
             var user=jQuery.parseJSON(data);
             if (data.error===undefined) {
                 jQuery("#username").html(user.nickname);
-                jQuery("a#login").remove();
+                jQuery("a#login").css("display","none");
+                jQuery("a#logout").css("display","block");
+                jQuery("body").append("<br /><span id='token'></span>");
+                jQuery("#token").html(token);
             }
         });
     }
 </script>
 <body>
-<span id="username"></span>你好！<a id="login" href="./login.html">登录</a>
+<span id="username"></span>你好！<a id="login" href="./login.html">登录</a><a id="logout" onclick="logout()" style="display:none">注销</a>
 </body>
 </html>

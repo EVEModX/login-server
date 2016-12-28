@@ -40,10 +40,10 @@ function login(req,resp){ //负责给新的token，
     else if (req.url==="/renew"){ //续期token
         data.User.findByName(username,function (err,user){
             if (err) throw err;
-            if (user!==undefined && user.checkToken(token)){
+            if (user!==undefined){
                 crypto.randomBytes(8,function(err,buf){ //64bit token 应该足够
                     if (err) throw (err);
-                    var expiretime=Math.floor(Date.now() / 1000)+config.security.tokenLivetime
+                    var expiretime=Math.floor(Date.now() / 1000)+config.security.tokenLivetime;
                     user.setToken(buf,expiretime,function(err){
                         if (err) throw (err);
                         resp.status(200).write(JSON.stringify({token:token,expiretime:expiretime}));
@@ -63,34 +63,55 @@ function login(req,resp){ //负责给新的token，
     }
 }
 function logout(req,resp) { //实质为注销token
-    var username=req.body.username,
-        token=req.body.token;
-    data.User.findByName(username,function(err,user){
+    var token_req=req.body.token_req;
+    data.User.findByToken(token_req,function(err,user){
         if (err){
             resp.status(500);
             resp.write(JSON.stringify({error:"Internal Server Error"}));
             resp.end();
             return;
         }
-        if (user===undefined || !user.checkToken(token)){
-            resp.status(403).write(JSON.stringify({error:"Token is invalid"}));
+        if (user===undefined){
+            resp.status(404).write(JSON.stringify({error:"the user of token not found"}));
             resp.end();
             return;
         }
-        user.clearToken(function(err){
-            if (err) throw err;
+        user.clearToken(token_req,function(err){
+            if (err) {
+                resp.status(500);
+                resp.write(JSON.stringify({error:"Internal Server Error"}));
+                resp.end();
+                return;
+            }
             resp.status(200).write(JSON.stringify({msg:"Token successfully cleared"}));
             resp.end();
         });
     });
 }
 function changepassword(req,resp){
-    //TODO:实现
+    var username_req=req.body.username_req,
+        newpassword=req.body.newpassword;
+    data.User.findByName(username_req,function(err,user){
+        if (err){
+            resp.status(500);
+            resp.write(JSON.stringify({error:"Internal Server Error"}));
+            resp.end();
+            return;
+        }
+        user.setPass(newpassword);
+        user.clearallToken(user.data.userid,function (err) {
+            if (err){
+                resp.status(500);
+                resp.write(JSON.stringify({error:"Internal Server Error"}));
+                resp.end();
+                return;
+            }
+        });
+    });
 }
 function validate(req,resp,next){ //检查request的权限是否正确
     var token=req.body.token;
     console.log("validating:"+req.originalUrl);
-    console.log("DEBUG:"+req.originalUrl.endsWith(".html"));
     if (req.originalUrl==="/login") next(); //登录请求不检查
     else if (req.originalUrl==="/") next();
     else if (req.originalUrl.endsWith(".html")) next();
@@ -110,21 +131,39 @@ function validate(req,resp,next){ //检查request的权限是否正确
                 resp.status(500);
                 resp.write(JSON.stringify({error:"Internal Server Error"}));
                 resp.end();
+                return;
             }
-            else if (user===undefined){
+            if (user===undefined) {
                 resp.status(403);
-                resp.write(JSON.stringify({msg:"Token is invalid or timed out"}));
+                resp.write(JSON.stringify({msg: "Token is invalid or timed out"}));
                 resp.end();
+                return;
             }
-            else
-                next();
+            if(req.originalUrl==="/changepassword"){//修改密码操作
+                if (user.data.userid!==1 && user.data.username!==req.body.username_req){
+                    resp.status(403);
+                    resp.write(JSON.stringify({msg:"Not allowed."}));
+                    resp.end();
+                    return;
+                }
+            }
+            if (req.originalUrl==="/logout"){ //登出
+                if (req.body.token===req.body.token_req || user.data.userid===1) next();
+                else {
+                    resp.status(403);
+                    resp.write(JSON.stringify({msg:"Not allowed."}));
+                    resp.end();
+                    return;
+                }
+            }
+            next();
             //TODO:实现检查用户的权限和各个操作所需要的权限比对
         });
     }
 }
 router.use(validate); //
 router.post('/login',login);
-router.post('/logout',logout);
 router.post('/renew',login);
+router.post('/logout',logout);
 router.post('/changepassword',changepassword);
 module.exports=router;

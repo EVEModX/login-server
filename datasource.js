@@ -113,16 +113,14 @@ User.prototype.requireToken=function (expire,callback){ //请求一个用户的t
         });
     });
 };
-User.prototype.clearToken=function (token){ //清除用户的token
+User.prototype.clearToken=function (token,callback){ //清除用户的token
     db.run("DELETE FROM tokens WHERE token=?",token,function(err){
-        if (err)
-            throw err;
+        callback(err);
     });
 };
-User.prototype.clearallToken=function(userid){
+User.prototype.clearallToken=function(userid,callback){
     db.run("DELETE FROM tokens WHERE userid=?",userid,function(err){
-        if (err)
-            throw err;
+        callback(err);
     });
 };
 User.prototype.checkToken=function (token,callback){ //检查这个token是不是属于自己
