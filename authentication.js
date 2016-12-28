@@ -127,6 +127,7 @@ function validate(req,resp,next){ //检查request的权限是否正确
     });*/
     else{
         data.User.findByToken(token,function (err,user){
+            //WARN:不要在if里面写next(),权限通过之后让控制流掉到最后一个next()去
             if (err){
                 resp.status(500);
                 resp.write(JSON.stringify({error:"Internal Server Error"}));
@@ -148,8 +149,7 @@ function validate(req,resp,next){ //检查request的权限是否正确
                 }
             }
             if (req.originalUrl==="/logout"){ //登出
-                if (req.body.token===req.body.token_req || user.data.userid===1) next();
-                else {
+                if (req.body.token!==req.body.token_req && user.data.userid!==1) {
                     resp.status(403);
                     resp.write(JSON.stringify({msg:"Not allowed."}));
                     resp.end();
