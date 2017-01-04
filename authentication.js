@@ -31,7 +31,7 @@ function login(req,resp){ //负责给新的token，
                     });
                 });
             }else{
-                resp.status(403);
+                resp.status(401);
                 resp.write(JSON.stringify({error:"username and password mismatch"}));
                 resp.end();
             }
@@ -51,7 +51,7 @@ function login(req,resp){ //负责给新的token，
                     });
                 });
             }else{
-                resp.status(403).write(JSON.stringify({error:"Token is invalid"}));
+                resp.status(401).write(JSON.stringify({error:"Token is invalid"}));
                 resp.end();
             }
         });
@@ -72,7 +72,7 @@ function logout(req,resp) { //实质为注销token
             return;
         }
         if (user===undefined){
-            resp.status(404).write(JSON.stringify({error:"the user of token not found"}));
+            resp.status(401).write(JSON.stringify({error:"the user of token not found"}));
             resp.end();
             return;
         }
@@ -135,7 +135,7 @@ function validate(req,resp,next){ //检查request的权限是否正确
                 return;
             }
             if (user===undefined) {
-                resp.status(403);
+                resp.status(401);
                 resp.write(JSON.stringify({msg: "Token is invalid or timed out"}));
                 resp.end();
                 return;

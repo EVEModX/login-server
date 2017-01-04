@@ -132,7 +132,7 @@ User.prototype.checkToken=function (token,callback){ //检查这个token是不�
         else callback(null,row.userid===that.data.userid);
     });
 };
-User.prototype.save=function(){ //把用户数据写回数据库
+User.prototype.save=function(callback){ //把用户数据写回数据库
     db.run("BEGIN TRANSACTION");
     var keys=Object.keys(this.data);
     for (var i=0;i<keys.length;++i){
@@ -143,10 +143,15 @@ User.prototype.save=function(){ //把用户数据写回数据库
         if (key==="password" || key==="password_salt")
             val=val.toString('hex');
         db.run("UPDATE users SET "+key+" = ? WHERE userid= ?",[val,this.data.userid],function (err) {
-            if (err)
-                console.log(err);
+            callback(err);
         });
     }
-    db.run("END");
+    db.run("END",function(err){
+        callback(err);
+    });
+    callback(null);
+};
+User.prototype.add=function(username,callback){
+    db.run("INSERT into users VALUES(username,)");
 };
 exports.User=User;

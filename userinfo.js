@@ -32,5 +32,25 @@ function getUserinfo(req,resp){
         resp.end();
     });
 }
+function setUserinfo(req,resp){
+    var requsername=req.body.username_req,
+        newinfo=req.body.newinfo;
+    data.User.findByName(requsername,function (err,user){
+        if (err){
+            resp.status(500);
+            resp.end();
+            return;
+        }
+        if (user===undefined){
+            resp.status(404).write(JSON.stringify({error:"User not found"}));
+            resp.end();
+            return;
+        }
+        newinfo=JSON.parse(newinfo);
+        user.data.nickname=newinfo.nickname;
+        resp.status(204).end();
+    });
+}
 router.post('/getinfo',getUserinfo);
+router.post('/setinfo',setUserinfo);
 module.exports=router;
