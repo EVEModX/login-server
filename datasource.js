@@ -29,7 +29,7 @@ User.prototype.changeNickname=function(newname){
 };
 
 User.findById=function (id,callback) {  //通过ID找到用户
-    var stmt=db.prepare("SELECT * FROM users WHERE userid=(?)");
+    var stmt=db.prepare("SELECT * FROM users WHERE userid=(?)",function (err) {if (err) callback(err)});
     stmt.get(id,function(err,row){
         if (err) callback(err);
         if (row===undefined) //没有找到对应用户
@@ -42,7 +42,7 @@ User.findById=function (id,callback) {  //通过ID找到用户
 * callback(err,user) user:返回的用户对象，找不到返回undefined
 * */
 User.findByName=function (name,callback){
-    var stmt=db.prepare("SELECT * FROM users WHERE username=(?)");
+    var stmt=db.prepare("SELECT * FROM users WHERE username=(?)",function (err) {if (err) callback(err)});
     stmt.get(name,function(err,row){
         if (err){
             callback(err);

@@ -19,7 +19,12 @@ function login(req,resp){ //负责给新的token，
     if (req.url==="/login"){ //登录
         console.log("login():processing /login");
         data.User.findByName(username,function (err,user){
-            if (err) throw err;
+            if (err){
+                resp.status(500).write(JSON.stringify({error:"服务器内部错误"}));
+                console.log(err);
+                resp.end();
+                return;
+            }
             if (user!==undefined && user.checkPass(password)) {
                 crypto.randomBytes(8,function(err,buf){ //64bit token 应该足够
                     if (err) throw (err);
@@ -39,7 +44,12 @@ function login(req,resp){ //负责给新的token，
     }
     else if (req.url==="/renew"){ //续期token
         data.User.findByName(username,function (err,user){
-            if (err) throw err;
+            if (err){
+                resp.status(500).write(JSON.stringify({error:"服务器内部错误"}));
+                console.log(err);
+                resp.end();
+                return;
+            }
             if (user!==undefined){
                 crypto.randomBytes(8,function(err,buf){ //64bit token 应该足够
                     if (err) throw (err);
@@ -109,7 +119,11 @@ function changepassword(req,resp){
         });
     });
 }
-function validate(req,resp,next){ //检查request的权限是否正确
+/*
+* 检查request的权限是否正确
+*
+* */
+function validate(req,resp,next){
     var token=req.body.token;
     console.log("validating:"+req.originalUrl);
     if (req.originalUrl==="/login") next(); //登录请求不检查
