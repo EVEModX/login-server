@@ -14,6 +14,10 @@ app.get('/',function (req,res) {
     res.redirect("/index.html"); //前面的都不抓就返回index.html
 });
 app.use(express.static('static')); //前面的都不抓说明请求的静态文件，返回
+app.use(function (err,req,res,next) { //兜底错误处理，防止node崩溃
+    res.status(500).send({error:"unknown error occurred, please contact admin."});
+    console.error(err);
+});
 app.listen(cfg.server.listenport,function(){
     console.log("Server Started");
 });

@@ -7,6 +7,11 @@ var crypto=require('crypto');
 var data=require('./datasource');
 var config = require("./config.js");
 var debug=require('debug');
+var redis=require('redis'),
+    rdsclient=redis.createClient();
+rdsclient.on("error",function (err) {
+    console.log("REDIS CLIENT ERROR:"+err);
+});
 var router=express.Router();
 /*
 * login() 对req里面存在的登录请求做出反应
@@ -121,7 +126,7 @@ function changepassword(req,resp){
 }
 /*
 * 检查request的权限是否正确
-*
+* @deprecated 权限系统需要重写
 * */
 function validate(req,resp,next){
     var token=req.body.token;
@@ -175,9 +180,38 @@ function validate(req,resp,next){
         });
     }
 }
+/*
+* 查询节点
+* :param id 用户ID
+* :param priv 权限节点
+* :param callback 回调
+* */
+function querynode(id,priv,callback){
+    rdsclient.sismember(priv,id,function (err,reply) {
+        if (err) {callback(err);return;}
+        callback(null,reply===1);
+    });
+}
+/*
+* 添加权限节点
+* :param id 用户ID
+* :param priv 权限节点
+* :param callback 回调
+* */
+function addnode(id,priv,callback){
+    data.User.findById(id,function (err,user) {
+        if (err){callback(err);return;}
+        if (user===undefined) {callback(new Error("user not found"));return;}
+        rdsclient.sadd(priv,id,function (err,reply) {
+            if (err) callback(err);
+            //TODO:加上错误处理
+            callback(null,true);
+        });
+    });
+}
 router.use(validate); //
 router.post('/login',login);
 router.post('/renew',login);
 router.post('/logout',logout);
 router.post('/changepassword',changepassword);
-module.exports=router;
+module.exports=[router,querynode,addnode];

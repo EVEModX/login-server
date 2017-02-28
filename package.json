@@ -1,12 +1,13 @@
 {
-  "name": "simpepage",
+  "name": "eveloginserver",
   "description": "",
   "version": "0.0.1",
   "private": true,
   "dependencies": {
     "express": "4.14.0",
     "sqlite3": "^3.1.8",
-    "body-parser": "latest"
+    "body-parser": "latest",
+    "redis":"latest"
   },
   "devDependencies": {
     "debug": "latest"

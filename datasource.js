@@ -4,7 +4,9 @@
 var sqlite3=require("sqlite3");
 var crypto=require("crypto");
 var config=require("./config");
-var db=new sqlite3.Database(__dirname+"/test.sqlite3");
+var db=new sqlite3.Database(__dirname+"/test.sqlite3").once('error',function (err) {
+    console.log("error on opening "+__dirname+"/test.sqlite3");
+});
 /*
 * User接口 实现用户数据相关
 * */

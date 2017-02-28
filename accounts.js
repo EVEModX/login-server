@@ -3,6 +3,7 @@
  */
 /*
 * 处理用户保存的用户名和密码，获取token返回
+* 自行处理数据链接，不接入系统的数据接口
 * */
 /*
 * 后续开发方向：在服务器被入侵时争取一部分时间给用户更改密码
@@ -11,8 +12,13 @@
 * A用户授权B用户使用账号X时，用A的密码解锁私钥，私钥解锁账户密码，然后用B的公钥加密存入
 * */
 var express=require('express');
+var auth=require('./authentication');
+var sqlite3=require('sqlite3');
+var ds=require('./datasource');
 var router=express.Router();
-
+var db=new sqlite3.Database(__dirname+"/accounts.sqlite3").once('error',function (err) {
+    console.error('error on opening '+__dirname+"/accounts.sqlite3");
+});
 /*
 * 权限系统：(accounts.*)
 *   - accounts.add
@@ -35,8 +41,15 @@ var router=express.Router();
 * */
 function addaccount(req,resp){
     var eveacc=req.body.account,
-        owner=req.body.account_owner;
-
+        owner=req.body.account_owner,
+        token=req.body.token;
+    ds.User.findByToken(token,function (err,user) {
+        if (err){
+            resp.status(500).end();
+            return;
+        }
+        if (auth.querynode)
+    });
 }
 /*
 * 修改/删除账号密码

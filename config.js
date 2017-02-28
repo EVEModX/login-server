@@ -3,10 +3,14 @@
  * 网站配置文件
  * */
 var config={};
+//服务器设置
 config.server={};
 config.server.listenport= process.env.WEB_PORT || 8080; // web server 监听端口
-
+//安全相关配置
 config.security={};
 config.security.tokenLivetime=60*60*24*3; //秒
 config.security.pbkdf2_iter=100000;
+//redis 配置
+config.redis={};
+config.redis.port=6379;
 module.exports=config;
