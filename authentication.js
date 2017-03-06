@@ -214,4 +214,4 @@ router.post('/login',login);
 router.post('/renew',login);
 router.post('/logout',logout);
 router.post('/changepassword',changepassword);
-module.exports=[router,querynode,addnode];
+module.exports=router;

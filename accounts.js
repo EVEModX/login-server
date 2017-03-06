@@ -48,7 +48,9 @@ function addaccount(req,resp){
             resp.status(500).end();
             return;
         }
-        if (auth.querynode)
+        if (auth.querynode){
+
+        }
     });
 }
 /*
