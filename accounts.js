@@ -24,7 +24,7 @@ var db=new sqlite3.Database(__dirname+"/accounts.sqlite3").once('error',function
 /*
 * 权限系统：(accounts.*)
 *   - accounts.add
-*   - accounts.edit.<account_id> (仅由所有者拥有)
+*   - accounts.edit.<account_id> 仅由所有者拥有，包括删除
 *     |
 *     +-accounts.give.<account_id>
 *       |
@@ -73,15 +73,22 @@ function addaccount(req,resp){
                 		resp.status(500).write(JSON.stringify({error:"Internal Error"}));
                 		return;
 					}
-					if (reply===null)
+					if (reply===null) {
 						rdsclient.set("account_cnt",1);
-					rdsclient.
+						reply=1;
+                	}
+					rdsclient.incr("account_cnt");
+                	newaccount.id=reply;
 				});
-				rdsclient.set(newaccount.username,JSON.stringify(newaccount)); //TODO: hmset or json string?
-                auth.addnode();
+				rdsclient.set(newaccount.username,JSON.stringify(newaccount)); //TODO: hmset or json string? WARN:key必须改名字
+                auth.addnode("accounts.edit."+newaccount.id.toString(),user.getID(),function (err,result) {
+					if (err){resp.status(500).write(JSON.stringify({error:"Internal Server Error"}));return;}
+					resp.status(200);
+					resp.write(JSON.stringify({accountid:newaccount.id}));
+					resp.end();
+                });
 			}
 		});
-			
     });
 }
 /*
@@ -94,7 +101,8 @@ function addaccount(req,resp){
 *   :param action 操作 1:删除 2:修改
 *	:param account 修改后的EVE账号
 * */
-function editaccount(req,resp,callback){
+var DELETE_ACCOUNT=1,EDIT_ACCOUNT=2;
+function editaccount(req,resp){
 	var token=req.body.token,
         aid=req.body.account_id,
 		action=req.body.action,
@@ -105,7 +113,25 @@ function editaccount(req,resp,callback){
             resp.status(404).write(JSON.stringify({error: "user not found"}));
             return;
         }
-		auth.querynode(user.getID(),);
+		auth.querynode(user.getID(),"accounts.edit."+aid.toString(),function(err,reply){
+			if (err) {resp.status(500).write(JSON.stringify({error:"Server Internal Error"})).end();return;}
+			if (reply===0){
+				resp.status(403).write(JSON.stringify({error:"not allowed"})).end();
+				return;
+			}
+            var multi=rdsclient.multi();
+			switch(action){
+				case DELETE_ACCOUNT:
+					multi.del("accounts.edit."+aid.toString());
+					multi.del("accounts.give."+aid.toString());
+					multi.del("accounts.gettoken."+aid.toString());
+					break;
+				case EDIT_ACCOUNT:
+					multi.set(); //TODO:如何处理删除和修改
+					break;
+				default:
+			}
+		});
 	});
 }
 /*

@@ -127,6 +127,7 @@ function changepassword(req,resp){
 /*
 * 检查request的权限是否正确
 * @deprecated 权限系统需要重写
+* TODO:vaildate改成直接查询用户Token到用户对象，没有的话返回403或者404
 * */
 function validate(req,resp,next){
     var token=req.body.token;
