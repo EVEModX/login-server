@@ -17,10 +17,12 @@ var sqlite3=require('sqlite3');
 var ds=require('./datasource');
 var redis=require('redis'),
 	rdsclient=redis.createClient();
+var async=require('async');
 var router=express.Router();
 var db=new sqlite3.Database(__dirname+"/accounts.sqlite3").once('error',function (err) {
     console.error('error on opening '+__dirname+"/accounts.sqlite3");
 });
+//TODO:重写权限字符串
 /*
 * 权限系统：(accounts.*)
 *   - accounts.add
@@ -28,7 +30,7 @@ var db=new sqlite3.Database(__dirname+"/accounts.sqlite3").once('error',function
 *     |
 *     +-accounts.give.<account_id>
 *       |
-*       +-accounts.gettoken.<account_id>
+*       +-accounts.getToken.<account_id>
 * */
 
 
@@ -41,6 +43,7 @@ var db=new sqlite3.Database(__dirname+"/accounts.sqlite3").once('error',function
 *   :param account json编码的EVE账号信息 {username:<username>,password:<password>}
 *   :param account_owner EVE账号所属ID
 * */
+//TODO:REDIS ZADD 命令
 function addaccount(req,resp){
     var eveacc=req.body.account,
         owner=req.body.account_owner,
@@ -80,7 +83,7 @@ function addaccount(req,resp){
 					rdsclient.incr("account_cnt");
                 	newaccount.id=reply;
 				});
-				rdsclient.set(newaccount.username,JSON.stringify(newaccount)); //TODO: hmset or json string? WARN:key必须改名字
+				rdsclient.set(newaccount.username,JSON.stringify(newaccount)); //TODO: hmset or json string? key必须改名字
                 auth.addnode("accounts.edit."+newaccount.id.toString(),user.getID(),function (err,result) {
 					if (err){resp.status(500).write(JSON.stringify({error:"Internal Server Error"}));return;}
 					resp.status(200);
@@ -101,6 +104,7 @@ function addaccount(req,resp){
 *   :param action 操作 1:删除 2:修改
 *	:param account 修改后的EVE账号
 * */
+//TODO:REDIS ZADD命令
 var DELETE_ACCOUNT=1,EDIT_ACCOUNT=2;
 function editaccount(req,resp){
 	var token=req.body.token,
@@ -143,7 +147,17 @@ function editaccount(req,resp){
 *   :param account_id 请求的EVE账号的ID
 * */
 function requesttoken(req,resp){
-
+	var token=req.body.token,
+		aid=req.body.account_id;
+	ds.User.findByToken(token,function (err,user) {
+		if (err){resp.status(500).write(JSON.stringify({error:"Internal Server Error"})).end();return;}
+		if (user===undefined){resp.status(404).write(JSON.stringify({error:"user not found"})).end();return;}
+		auth.querynode(user.getID(),"accounts.gettoken."+aid.toString(),function (err,reply) {
+			if (err){resp.status(500).write(JSON.stringify({error:"Internal Server Error"})).end();return;}
+			if (reply===false){resp.status(403).write(JSON.stringify({error:"Internal Server Error"})).end();return;}
+			//TODO:向天成发送请求
+        });
+    });
 }
 /*
 * 用户授权其他人使用EVE账号
@@ -156,11 +170,58 @@ function requesttoken(req,resp){
 *   :param priv 授予的权限("gettoken":登录 "give":授予他人)
 * */
 function giveaccess(req,resp){
-
+	//TODO:实现
 }
+function authorization(req, resp, next){
+	console.log(req.path);
+	var user=req.user,
+		aid=req.body.account_id;
+	async.series([
+		function (callback) {
+			auth.querynode(user.getID(),"accounts.edit."+aid.toString(),function (err,reply) {
+				if (err) return callback({error:err});
+				if (reply===1) return callback({data:"edit"});
+				callback();
+            })
+        },
+		function (callback) {
+			auth.querynode(user.getID(),"accounts.give."+aid.toString(),function (err,reply) {
+				if (err) return callback({error:err});
+				if (reply===1) return callback({data:"give"});
+				callback();
+            })
+        },
+		function (callback) {
+			auth.querynode(user.getID(),"accounts.getToken."+aid.toString(),function (err,reply) {
+				if (err) return callback({error:err});
+				if (reply===1) return callback({data:"getToken"});
+				callback();
+            })
+        }
+	],function (result) {
+		if (!result && req.path!="/add"){
+			resp.status(403).end();
+		}else if (result.error){
+			resp.status(500).end();
+			//TODO:记录错误
+		}else{
+			var reject=function () {
+				resp.status(403).end();
+            };
+			if (req.path==="/give" && result.data==="getToken"){
+				reject();
+            }else if (req.path==="/edit" && req.path==="/delete" && result.data==="give"){
+				reject();
+			}else{
+            	next();
+			}
+		}
+    });
+}
+router.use(authorization);
 router.post('/add',addaccount);
 router.post('/edit',editaccount);
 router.post('/delete',editaccount);
 router.post('/login',requesttoken);
-router.post('/giveaccess',giveaccess);
+router.post('/give',giveaccess);
 module.exports=router;

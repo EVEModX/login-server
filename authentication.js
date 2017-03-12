@@ -15,6 +15,7 @@ rdsclient.on("error",function (err) {
 var router=express.Router();
 /*
 * login() 对req里面存在的登录请求做出反应
+*
 * */
 function login(req,resp){ //负责给新的token，
     console.log("processing login request:"+req.baseUrl);
@@ -31,7 +32,7 @@ function login(req,resp){ //负责给新的token，
                 return;
             }
             if (user!==undefined && user.checkPass(password)) {
-                crypto.randomBytes(8,function(err,buf){ //64bit token 应该足够
+                crypto.randomBytes(8,function(err,buf){ //64bit token 应该足够 //TODO:重写
                     if (err) throw (err);
                     var expiretime=Math.floor(Date.now() / 1000)+config.security.tokenLivetime;
                     user.requireToken(expiretime,function(err,token){
@@ -176,16 +177,22 @@ function validate(req,resp,next){
                     return;
                 }
             }
+            req.user=user;
             next();
             //TODO:实现检查用户的权限和各个操作所需要的权限比对
         });
     }
 }
 /*
+ * @callback privilegeNodeCallback
+ * @param {Object} err - 错误
+ * @param {int|boolean} result - 操作结果
+ * */
+/*
 * 查询节点
-* :param id 用户ID
-* :param priv 权限节点
-* :param callback 回调
+* @param {int} id 用户ID
+* @param {string} priv 权限节点
+* @param {privilegeNodeCallback} callback 回调
 * */
 function querynode(id,priv,callback){
     rdsclient.sismember(priv,id,function (err,reply) {
@@ -195,9 +202,9 @@ function querynode(id,priv,callback){
 }
 /*
 * 添加权限节点
-* :param id 用户ID
-* :param priv 权限节点
-* :param callback 回调
+* @param {int} id 用户ID
+* @param {string} priv 权限节点
+* @param {privilegeNodeCallback} callback 回调
 * */
 function addnode(id,priv,callback){
     data.User.findById(id,function (err,user) {
@@ -210,6 +217,12 @@ function addnode(id,priv,callback){
         });
     });
 }
+/*
+* 删除权限节点
+* @param {int} id 用户ID
+* @param {string} 权限节点
+* @param {privilegeNodeCallback} callback 回调
+* */
 function delnode(id,priv,callback){
     data.User.findById(id,function(err,user){
         if (err) {callback(err);return;}
