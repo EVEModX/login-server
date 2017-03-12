@@ -209,9 +209,20 @@ function addnode(id,priv,callback){
         });
     });
 }
+function delnode(id,priv,callback){
+    data.User.findById(id,function(err,user){
+        if (err) {callback(err);return;}
+        if (user===undefined) {callback(new Error("user not found"));return;}
+        rdsclient.del(priv);
+        callback(null,1);
+    });
+}
 router.use(validate); //
 router.post('/login',login);
 router.post('/renew',login);
 router.post('/logout',logout);
 router.post('/changepassword',changepassword);
 module.exports=router;
+exports.querynode=querynode;
+exports.addnode=addnode;
+exports.delnode=delnode;

@@ -15,6 +15,8 @@ var express=require('express');
 var auth=require('./authentication');
 var sqlite3=require('sqlite3');
 var ds=require('./datasource');
+var redis=require('redis'),
+	rdsclient=redis.createClient();
 var router=express.Router();
 var db=new sqlite3.Database(__dirname+"/accounts.sqlite3").once('error',function (err) {
     console.error('error on opening '+__dirname+"/accounts.sqlite3");
@@ -43,14 +45,43 @@ function addaccount(req,resp){
     var eveacc=req.body.account,
         owner=req.body.account_owner,
         token=req.body.token;
+    if (eveacc===undefined || owner===undefined || token===undefined){
+        resp.status(500).write(JSON.stringify({error:"missing arguments"}));
+        resp.end();
+        return;
+    }
+    eveacc=JSON.parse(eveacc);
     ds.User.findByToken(token,function (err,user) {
         if (err){
-            resp.status(500).end();
+            resp.status(500).write(JSON.stringify({error:"user not found"}));
+            resp.end();
             return;
         }
-        if (auth.querynode){
-
-        }
+        auth.querynode(user.getID(),"accounts.add",function(err,result){
+			if (err){
+				resp.status(500).write(JSON.stringify({error:"privilege error, please contact admin."}));
+				resp.end();
+				return;
+			}
+			if (result){
+			    var newaccount={};
+                newaccount.username=eveacc.username;
+                newaccount.password=eveacc.password;
+                newaccount.owner=user.getID();
+                rdsclient.get("account_cnt",function(err,reply){
+                	if (err){
+                		resp.status(500).write(JSON.stringify({error:"Internal Error"}));
+                		return;
+					}
+					if (reply===null)
+						rdsclient.set("account_cnt",1);
+					rdsclient.
+				});
+				rdsclient.set(newaccount.username,JSON.stringify(newaccount)); //TODO: hmset or json string?
+                auth.addnode();
+			}
+		});
+			
     });
 }
 /*
@@ -60,9 +91,22 @@ function addaccount(req,resp){
 * 表单:
 *   :param token 用户token
 *   :param account_id EVE账号的ID
+*   :param action 操作 1:删除 2:修改
+*	:param account 修改后的EVE账号
 * */
-function editaccount(req,resp){
-
+function editaccount(req,resp,callback){
+	var token=req.body.token,
+        aid=req.body.account_id,
+		action=req.body.action,
+		eveacc=req.body.eveaccount;
+	ds.User.findByToken(token,function(err,user){
+		if (err){resp.status(500).write(JSON.stringify({error:"Server Internal Error"})).end();return;}
+		if (user===undefined) {
+            resp.status(404).write(JSON.stringify({error: "user not found"}));
+            return;
+        }
+		auth.querynode(user.getID(),);
+	});
 }
 /*
 * 向天成服务器请求EVE登录token

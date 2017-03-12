@@ -156,4 +156,7 @@ User.prototype.save=function(callback){ //把用户数据写回数据库
 User.prototype.add=function(username,callback){
     db.run("INSERT into users VALUES(username,)");
 };
+User.prototype.getID=function(){
+	return this.data.userid;
+}
 exports.User=User;
