@@ -43,55 +43,43 @@ var db=new sqlite3.Database(__dirname+"/accounts.sqlite3").once('error',function
 *   :param account json编码的EVE账号信息 {username:<username>,password:<password>}
 *   :param account_owner EVE账号所属ID
 * */
-//TODO:REDIS ZADD 命令
+//TODO:数据一致性
 function addaccount(req,resp){
     var eveacc=req.body.account,
-        owner=req.body.account_owner,
-        token=req.body.token;
-    if (eveacc===undefined || owner===undefined || token===undefined){
-        resp.status(500).write(JSON.stringify({error:"missing arguments"}));
+        owner=req.body.account_owner;
+    if (eveacc===undefined || owner===undefined){
+        resp.status(400).write(JSON.stringify({error:"missing arguments"}));
         resp.end();
         return;
     }
-    eveacc=JSON.parse(eveacc);
-    ds.User.findByToken(token,function (err,user) {
-        if (err){
-            resp.status(500).write(JSON.stringify({error:"user not found"}));
+	var newaccount={};
+	newaccount.username=eveacc.username;
+	newaccount.password=eveacc.password;
+	newaccount.owner=user.getID();
+	rdsclient.get("account_cnt",function(err,reply){
+		if (err){
+			resp.status(500).write().end();
+			//TODO:日志
+			return;
+		}
+		if (reply===null) {
+			rdsclient.set("account_cnt",1);
+			reply=1;
+		}
+		rdsclient.incr("account_cnt");
+		newaccount.id=reply;
+	});
+	var multi=rdsclient.multi();
+	multi.set(newaccount.id,JSON.stringify(newaccount));
+	multi.sadd("user."+user.getID()+".accounts",newaccount.id);
+	multi.exec(function (err,result) {
+		if (err) {resp.status(500).end();return;}
+        auth.addnode("accounts.edit."+newaccount.id.toString(),user.getID(),function (err,result) {
+            if (err){resp.status(500).write(JSON.stringify({error:"Internal Server Error"}));return;}
+            resp.status(200);
+            resp.write(JSON.stringify({accountid:newaccount.id}));
             resp.end();
-            return;
-        }
-        auth.querynode(user.getID(),"accounts.add",function(err,result){
-			if (err){
-				resp.status(500).write(JSON.stringify({error:"privilege error, please contact admin."}));
-				resp.end();
-				return;
-			}
-			if (result){
-			    var newaccount={};
-                newaccount.username=eveacc.username;
-                newaccount.password=eveacc.password;
-                newaccount.owner=user.getID();
-                rdsclient.get("account_cnt",function(err,reply){
-                	if (err){
-                		resp.status(500).write(JSON.stringify({error:"Internal Error"}));
-                		return;
-					}
-					if (reply===null) {
-						rdsclient.set("account_cnt",1);
-						reply=1;
-                	}
-					rdsclient.incr("account_cnt");
-                	newaccount.id=reply;
-				});
-				rdsclient.set(newaccount.username,JSON.stringify(newaccount)); //TODO: hmset or json string? key必须改名字
-                auth.addnode("accounts.edit."+newaccount.id.toString(),user.getID(),function (err,result) {
-					if (err){resp.status(500).write(JSON.stringify({error:"Internal Server Error"}));return;}
-					resp.status(200);
-					resp.write(JSON.stringify({accountid:newaccount.id}));
-					resp.end();
-                });
-			}
-		});
+        });
     });
 }
 /*
@@ -99,44 +87,61 @@ function addaccount(req,resp){
 * 授权:
 *   - accounts.edit.<account_id>
 * 表单:
-*   :param token 用户token
 *   :param account_id EVE账号的ID
 *   :param action 操作 1:删除 2:修改
 *	:param account 修改后的EVE账号
 * */
-//TODO:REDIS ZADD命令
 var DELETE_ACCOUNT=1,EDIT_ACCOUNT=2;
 function editaccount(req,resp){
-	var token=req.body.token,
-        aid=req.body.account_id,
+	var aid=req.body.account_id,
 		action=req.body.action,
-		eveacc=req.body.eveaccount;
-	ds.User.findByToken(token,function(err,user){
-		if (err){resp.status(500).write(JSON.stringify({error:"Server Internal Error"})).end();return;}
-		if (user===undefined) {
-            resp.status(404).write(JSON.stringify({error: "user not found"}));
-            return;
-        }
-		auth.querynode(user.getID(),"accounts.edit."+aid.toString(),function(err,reply){
-			if (err) {resp.status(500).write(JSON.stringify({error:"Server Internal Error"})).end();return;}
-			if (reply===0){
-				resp.status(403).write(JSON.stringify({error:"not allowed"})).end();
-				return;
-			}
-            var multi=rdsclient.multi();
-			switch(action){
-				case DELETE_ACCOUNT:
-					multi.del("accounts.edit."+aid.toString());
-					multi.del("accounts.give."+aid.toString());
-					multi.del("accounts.gettoken."+aid.toString());
-					break;
-				case EDIT_ACCOUNT:
-					multi.set(); //TODO:如何处理删除和修改
-					break;
-				default:
-			}
-		});
-	});
+		eveacc=req.body.account;
+	var multi=rdsclient.multi();
+	switch(action){
+		case DELETE_ACCOUNT:
+			async.series([
+				function (callback) {
+                    multi.del("accounts.edit."+aid.toString());
+                    multi.del("accounts.give."+aid.toString());
+                    multi.del("accounts.getToken."+aid.toString());
+                    multi.del(aid);
+                    callback();
+                },
+				function (callback) {
+                    rdsclient.keys("user.*.accounts",function (err,replies) {
+                        if (err) return callback(err);
+                        replies.forEach(function (reply) {
+                            multi.srem(reply,aid);
+                        });
+                    });
+                    callback();
+                },
+				function (callback) {
+					multi.exec(function (err,replies) {
+						if (err) return callback(err);
+						return callback();
+                    })
+                }
+			],function (err,result) {
+                if (err) {resp.status(500).end();return;}
+                resp.status(200).end();
+			});
+			break;
+		case EDIT_ACCOUNT:
+			var newaccount={};
+			newaccount.username=eveacc.username;
+			newaccount.password=eveacc.password;
+			newaccount.owner=req.user.getID();
+			newaccount.id=aid;
+			multi.set(aid,newaccount); //TODO:如何处理删除和修改
+			multi.exec(function (err,reply) {
+				if (err) {resp.status(500).end();return;}
+				resp.status(200).end();
+            });
+			break;
+		default:
+			resp.status(400).end();
+	}
 }
 /*
 * 向天成服务器请求EVE登录token
@@ -146,31 +151,46 @@ function editaccount(req,resp){
 *   :param token 用户token
 *   :param account_id 请求的EVE账号的ID
 * */
+//TODO:实现
 function requesttoken(req,resp){
-	var token=req.body.token,
-		aid=req.body.account_id;
-	ds.User.findByToken(token,function (err,user) {
-		if (err){resp.status(500).write(JSON.stringify({error:"Internal Server Error"})).end();return;}
-		if (user===undefined){resp.status(404).write(JSON.stringify({error:"user not found"})).end();return;}
-		auth.querynode(user.getID(),"accounts.gettoken."+aid.toString(),function (err,reply) {
-			if (err){resp.status(500).write(JSON.stringify({error:"Internal Server Error"})).end();return;}
-			if (reply===false){resp.status(403).write(JSON.stringify({error:"Internal Server Error"})).end();return;}
-			//TODO:向天成发送请求
-        });
-    });
+	var aid=req.body.account_id;
+	var uri="https://auth.eve-online.com.cn/oauth/authorize?client_id=eveclient&scope=eveClientLogin&response_type=token&redirect_uri=https%3A%2F%2Fauth.eve-online.com.cn%2Flauncher%3Fclient_id%3Deveclient&lang=zh&mac=None"
+	rdsclient.get(aid,function (err,reply) {
+		if (err) {resp.status(500).end();return;}
+		resp.status(200).write(reply).end();
+    })
 }
 /*
 * 用户授权其他人使用EVE账号
 * 授权:
 *   - accounts.give.<account_id>
 * 表单:
-*   :param token 用户token
-*   :param account_id EVE账号的ID
 *   :param give_to 被授予的用户ID
 *   :param priv 授予的权限("gettoken":登录 "give":授予他人)
 * */
+//TODO:撤销权限
 function giveaccess(req,resp){
-	//TODO:实现
+	var aid=req.body.account_id,
+		given=req.body.give_to,
+		priv=req.body.priv;
+	ds.User.findById(given,function (err,user) {
+		if (err) {resp.status(500).end();return;}
+		if (!user){
+			resp.status(404).write(JSON.stringify({error:"user not found"})).end();
+			return;
+		}
+		auth.addnode(user.getID(),"accounts."+priv+"."+aid,function (err,result) {
+			if (err || !result){resp.status(500).end();return;}
+			resp.status(200).end();
+        });
+	});
+}
+function get_accounts(req, resp) {
+	var user=req.user;
+	rdsclient.smember("user."+user.getID()+".accounts",function (err,reply) {
+		if (err) {resp.status(500).end();return;}
+		resp.status(200).write(JSON.stringify(reply)).end();
+    });
 }
 function authorization(req, resp, next){
 	console.log(req.path);
@@ -221,6 +241,7 @@ function authorization(req, resp, next){
 router.use(authorization);
 router.post('/add',addaccount);
 router.post('/edit',editaccount);
+router.post('/get_accounts',get_accounts);
 router.post('/delete',editaccount);
 router.post('/login',requesttoken);
 router.post('/give',giveaccess);
