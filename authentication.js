@@ -7,12 +7,19 @@ var crypto=require('crypto');
 var data=require('./datasource');
 var config = require("./config.js");
 var debug=require('debug');
+var async=require('async');
 var redis=require('redis'),
     rdsclient=redis.createClient();
 rdsclient.on("error",function (err) {
     console.log("REDIS CLIENT ERROR:"+err);
 });
 var router=express.Router();
+/*
+* 用户管理权限系统
+* * root (UID=0) 最高权限
+* * user.modify 可以修改所有用户数据
+* - * user.add 添加用户
+* */
 /*
 * login() 对req里面存在的登录请求做出反应
 *
@@ -36,7 +43,7 @@ function login(req,resp){ //负责给新的token，
                     if (err) throw (err);
                     var expiretime=Math.floor(Date.now() / 1000)+config.security.tokenLivetime;
                     user.requireToken(expiretime,function(err,token){
-                        if (err) throw (err);
+                        if (err) {resp.status(500).end();console.log(err);return;}
                         resp.status(200).write(JSON.stringify({token:token.toString('hex'),expiretime:expiretime,userid:user.data.userid}));
                         resp.end();
                     });
@@ -73,7 +80,7 @@ function login(req,resp){ //负责给新的token，
         });
     }
     else{ //操作不支持
-        resp.status(500);
+        resp.status(501);
         resp.write(JSON.stringify({error:"operation not implemented."}));
         resp.end();
     }
@@ -126,11 +133,12 @@ function changepassword(req,resp){
     });
 }
 /*
-* 检查request的权限是否正确
-* @deprecated 权限系统需要重写
-* TODO:vaildate改成直接查询用户Token到用户对象，没有的话返回403或者404
+* 执行验证(authentication)职能
+* TODO:重写,使其只执行验证功能
+* @param {string} [token] 用户令牌
+* 如果存在用户令牌，将会转换为req.user
 * */
-function validate(req,resp,next){
+function authentication(req, resp, next){
     var token=req.body.token;
     console.log("validating:"+req.originalUrl);
     if (req.originalUrl==="/login") next(); //登录请求不检查
@@ -184,6 +192,52 @@ function validate(req,resp,next){
     }
 }
 /*
+* 添加用户
+* 权限节点
+*   -user.add
+* 表单
+* @param {string} username 用户名
+* @param {string} password 明文密码
+* @param {string} [nickname] 昵称
+* */
+function adduser(req,resp){
+    var newuser=new data.User();
+    newuser.data.username=req.body.username;
+    var plainpass=req.body.password;
+    newuser.data.nickname=req.body.nickname;
+    if (newuser.data.username===undefined ||
+        newuser.data.username===null||
+        plainpass===undefined ||
+        plainpass===null){
+        resp.status(400).write(JSON.stringify("username or password missing"));
+        resp.end();
+        return;
+    }
+    async.series([
+        function (callback) {
+            newuser.setPass(plainpass,callback);
+        },
+        function (callback) {
+            newuser.save(callback);
+        }
+    ],function (err,result) {
+        if (err) {
+            if (err.errno===19){
+                //碰到SQL约束
+                if (err.message.indexOf("user.username")!==-1){
+                    //用户名重名
+                    resp.status(409).write(JSON.stringify({error:"username existed"})).end();
+                }else{
+                    resp.status(500).end();
+                }
+            }else{
+                resp.status(500).end();
+            }
+        }
+        resp.status(200).end();
+    });
+}
+/*
  * @callback privilegeNodeCallback
  * @param {Object} err - 错误
  * @param {int|boolean} result - 操作结果
@@ -231,11 +285,12 @@ function delnode(id,priv,callback){
         callback(null,1);
     });
 }
-router.use(validate); //
+router.use(authentication); //
 router.post('/login',login);
 router.post('/renew',login);
 router.post('/logout',logout);
 router.post('/changepassword',changepassword);
+router.post('/adduser',adduser);
 module.exports=router;
 exports.querynode=querynode;
 exports.addnode=addnode;

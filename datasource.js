@@ -6,14 +6,21 @@ var crypto=require("crypto");
 var config=require("./config");
 var db=new sqlite3.Database(__dirname+"/test.sqlite3").once('error',function (err) {
     console.log("error on opening "+__dirname+"/test.sqlite3");
+    resp.status(500).end();
 });
 /*
 * User接口 实现用户数据相关
 * */
 var User=function (data){
-    this.data=data;
-    this.data.password=new Buffer(this.data.password,'hex');
-    this.data.password_salt=new Buffer(this.data.password_salt,'hex');
+    if (data===undefined || data===null){
+        this.data={};
+        this.data.username="";
+        this.data.password="";
+    } else{
+        this.data=data;
+        this.data.password=new Buffer(this.data.password,'hex');
+        this.data.password_salt=new Buffer(this.data.password_salt,'hex');
+    }
 };
 /*
 * User对象字段
@@ -31,7 +38,7 @@ User.prototype.changeNickname=function(newname){
 };
 
 User.findById=function (id,callback) {  //通过ID找到用户
-    var stmt=db.prepare("SELECT * FROM users WHERE userid=(?)",function (err) {if (err) callback(err)});
+    var stmt=db.prepare("SELECT * FROM users WHERE userid=(?)",function (err) {if (err) return callback(err)});
     stmt.get(id,function(err,row){
         if (err) callback(err);
         if (row===undefined) //没有找到对应用户
@@ -44,7 +51,7 @@ User.findById=function (id,callback) {  //通过ID找到用户
 * callback(err,user) user:返回的用户对象，找不到返回undefined
 * */
 User.findByName=function (name,callback){
-    var stmt=db.prepare("SELECT * FROM users WHERE username=(?)",function (err) {if (err) callback(err)});
+    var stmt=db.prepare("SELECT * FROM users WHERE username=(?)",function (err) {if (err) return callback(err)});
     stmt.get(name,function(err,row){
         if (err){
             callback(err);
@@ -89,16 +96,17 @@ User.prototype.checkPass=function (plainpass){ //检查password是不是用户�
     var key=crypto.pbkdf2Sync(plainpass,salt,config.security.pbkdf2_iter,16,'sha512');
     return Buffer.compare(password,key)===0;
 };
-User.prototype.setPass=function (plainpass){  //设置用户密码
+User.prototype.setPass=function (plainpass,callback){  //设置用户密码
     var that=this;
     crypto.randomBytes(16,function (err,buf){
         if (err)
-            throw err;
+            return callback(err);
         crypto.pbkdf2(plainpass,buf,config.security.pbkdf2_iter,16,'sha512',function (err,key) {
             if (err)
-                throw err;
+                return callback(err);
             that.data.password=key;
             that.data.password_salt=buf;
+            callback(null,true);
         });
     });
 };
@@ -137,6 +145,12 @@ User.prototype.checkToken=function (token,callback){ //检查这个token是不�
 User.prototype.save=function(callback){ //把用户数据写回数据库
     db.run("BEGIN TRANSACTION");
     var keys=Object.keys(this.data);
+    if (this.data.userid===undefined || this.data.userid===null && !this.data.username){
+        //新用户添加
+        db.run("INSERT INTO users(username) VALUES (?)",this.data.username,function (err,row) {
+            if (err) return callback(err);
+        });
+    }
     for (var i=0;i<keys.length;++i){
         var key=keys[i];
         var val=this.data[key];
@@ -153,10 +167,14 @@ User.prototype.save=function(callback){ //把用户数据写回数据库
     });
     callback(null);
 };
+//TODO:实现添加用户
+/*
+* 添加用户
+* */
 User.prototype.add=function(username,callback){
     db.run("INSERT into users VALUES(username,)");
 };
 User.prototype.getID=function(){
 	return this.data.userid;
-}
+};
 exports.User=User;

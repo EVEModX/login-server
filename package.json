@@ -1,14 +1,14 @@
 {
-  "name": "eveloginserver",
+  "name": "eve-login-server",
   "description": "",
   "version": "0.0.1",
   "private": true,
   "dependencies": {
     "express": "4.14.0",
     "sqlite3": "^3.1.8",
-    "body-parser": "latest",
-    "redis":"latest",
-    "async":"latest"
+    "body-parser": "1.17.1",
+    "redis":"2.6.5",
+    "async":"2.1.5"
   },
   "devDependencies": {
     "debug": "latest"
