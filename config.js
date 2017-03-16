@@ -3,6 +3,8 @@
  * 网站配置文件
  * */
 var config={};
+//开发设置
+config.debug=true;
 //服务器设置
 config.server={};
 config.server.listenport= process.env.WEB_PORT || 8080; // web server 监听端口

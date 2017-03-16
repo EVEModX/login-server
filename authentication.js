@@ -1,6 +1,7 @@
 /* Use UTF-8 to operate this file*/
 /*
  * 此模块处理权限相关问题，包括获取token、更改密码、更改权限之类
+ * @author hanyuwei70 hanyuwei70@qq.com
  * */
 var express=require('express');
 var crypto=require('crypto');
@@ -21,8 +22,9 @@ var router=express.Router();
 * - * user.add 添加用户
 * */
 /*
-* login() 对req里面存在的登录请求做出反应
-*
+* 请求token
+* @param {string} username 用户名
+* @param {string} password 密码
 * */
 function login(req,resp){ //负责给新的token，
     console.log("processing login request:"+req.baseUrl);
@@ -85,6 +87,10 @@ function login(req,resp){ //负责给新的token，
         resp.end();
     }
 }
+/*
+* 注销token
+* @param
+* */
 function logout(req,resp) { //实质为注销token
     var token_req=req.body.token_req;
     data.User.findByToken(token_req,function(err,user){
@@ -192,6 +198,19 @@ function authentication(req, resp, next){
     }
 }
 /*
+* 执行authentication模块授权任务，即用户系统权限
+* */
+function authorization(req,resp,next){
+    async.series([
+        function (callback) {
+            if (config.debug)
+            if (req.)
+        }
+    ],function (err,result) {
+        if (err)
+    });
+}
+/*
 * 添加用户
 * 权限节点
 *   -user.add
@@ -285,7 +304,8 @@ function delnode(id,priv,callback){
         callback(null,1);
     });
 }
-router.use(authentication); //
+router.use(authentication); //做token验证
+router.use(authorization);
 router.post('/login',login);
 router.post('/renew',login);
 router.post('/logout',logout);
