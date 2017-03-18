@@ -31,13 +31,41 @@
                 jQuery("#username").html(user.nickname);
                 jQuery("a#login").css("display","none");
                 jQuery("a#logout").css("display","block");
+                jQuery("div#adduser").css("display","block");
                 jQuery("body").append("<br /><span id='token'></span>");
                 jQuery("#token").html(token);
             }
         });
     }
+    function adduser() {
+        var postdata={};
+        var token=Cookies.get("token");
+        postdata.token=token;
+        postdata.username=jQuery("input#new_un").val();
+        postdata.password=jQuery("input#new_pw").val();
+        postdata.nickname=jQuery("input#new_nn").val();
+        jQuery.post("./adduser",postdata).done(function (data) {
+            var resp=JSON.parse(data);
+            if (resp.error===undefined){
+                jQuery("span#register_result").html("注册成功!");
+            }
+        }).fail(function (data) {
+            console.log("error handle:"+data.status);
+            var resp=JSON.parse(data.responseText);
+            jQuery("span#register_result").html(resp.error);
+        });
+    }
 </script>
 <body>
-<span id="username"></span>你好！<a id="login" href="./login.html">登录</a><a id="logout" onclick="logout()" style="display:none">注销</a>
+<span id="username"></span>你好！<a id="login" href="./login.html">登录</a>
+<a id="logout" onclick="logout()" style="display:none">注销</a>
+<div id="adduser" style="display: none;">添加用户
+    <form>用户名<input type="text" id="new_un"/><br/>
+        密码<input type="text" id="new_pw"><br/>
+        昵称<input type="text" id="new_nn"><br/>
+        <input type="button" name="submit" onclick="adduser()" value="注册"/><br/>
+        <span id="register_result"></span>
+    </form>
+</div>
 </body>
 </html>

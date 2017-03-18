@@ -1,12 +1,15 @@
 /*
 * 抽象数据接口,sqlite3版本
 * */
-var sqlite3=require("sqlite3");
+var sqlite3=require("sqlite3").verbose();
+
+var debug=require("debug")('datasource');
 var crypto=require("crypto");
 var config=require("./config");
-var db=new sqlite3.Database(__dirname+"/test.sqlite3").once('error',function (err) {
-    console.log("error on opening "+__dirname+"/test.sqlite3");
-    resp.status(500).end();
+var async=require("async");
+var db=new sqlite3.Database(__dirname+"/test.sqlite3");
+db.on('trace',function (stmt) {
+    require('debug')('sqlite3')(stmt);
 });
 /*
 * User接口 实现用户数据相关
@@ -18,8 +21,8 @@ var User=function (data){
         this.data.password="";
     } else{
         this.data=data;
-        this.data.password=new Buffer(this.data.password,'hex');
-        this.data.password_salt=new Buffer(this.data.password_salt,'hex');
+        this.data.password=new Buffer((this.data.password==null)?"":this.data.password,'hex');
+        this.data.password_salt=new Buffer((this.data.password_salt==null)?"":this.data.password_salt,'hex');
     }
 };
 /*
@@ -38,8 +41,7 @@ User.prototype.changeNickname=function(newname){
 };
 
 User.findById=function (id,callback) {  //通过ID找到用户
-    var stmt=db.prepare("SELECT * FROM users WHERE userid=(?)",function (err) {if (err) return callback(err)});
-    stmt.get(id,function(err,row){
+    db.get("SELECT * FROM users WHERE userid=?",id,function(err,row){
         if (err) callback(err);
         if (row===undefined) //没有找到对应用户
             callback(null,undefined);
@@ -51,15 +53,12 @@ User.findById=function (id,callback) {  //通过ID找到用户
 * callback(err,user) user:返回的用户对象，找不到返回undefined
 * */
 User.findByName=function (name,callback){
-    var stmt=db.prepare("SELECT * FROM users WHERE username=(?)",function (err) {if (err) return callback(err)});
-    stmt.get(name,function(err,row){
+    db.get("SELECT * FROM users WHERE username=?",name,function(err,row){
         if (err){
-            callback(err);
-            return;
+            return callback(err);
         }
         if (row===undefined){
-            callback(null,undefined);
-            return;
+            return callback(null,undefined);
         }
         if (new Date(row.expiretime)<new Date()){ //token过期
             db.run("DELETE FROM tokens WHERE token=?",token,function(err) {
@@ -68,9 +67,8 @@ User.findByName=function (name,callback){
                 else
                     callback(null,undefined);
             });
-            return;
-        }
-        callback(null,new User(row));
+        }else
+            callback(null,new User(row));
     });
 };
 /*
@@ -125,12 +123,18 @@ User.prototype.requireToken=function (expire,callback){ //请求一个用户的t
 };
 User.prototype.clearToken=function (token,callback){ //清除用户的token
     db.run("DELETE FROM tokens WHERE token=?",token,function(err){
-        callback(err);
+        if (err)
+            return callback(err);
+        else
+            return callback(null);
     });
 };
 User.prototype.clearallToken=function(userid,callback){
     db.run("DELETE FROM tokens WHERE userid=?",userid,function(err){
-        callback(err);
+        if (err)
+            return callback(err);
+        else
+            return callback(null);
     });
 };
 User.prototype.checkToken=function (token,callback){ //检查这个token是不是属于自己
@@ -143,8 +147,8 @@ User.prototype.checkToken=function (token,callback){ //检查这个token是不�
     });
 };
 User.prototype.save=function(callback){ //把用户数据写回数据库
-    db.run("BEGIN TRANSACTION");
-    var keys=Object.keys(this.data);
+    var that=this;
+    /*var keys=Object.keys(this.data);
     if (this.data.userid===undefined || this.data.userid===null && !this.data.username){
         //新用户添加
         db.run("INSERT INTO users(username) VALUES (?)",this.data.username,function (err,row) {
@@ -163,16 +167,72 @@ User.prototype.save=function(callback){ //把用户数据写回数据库
         });
     }
     db.run("END",function(err){
-        callback(err);
+        return callback(err);
+    });*/
+    var db_=new sqlite3.Database(__dirname+"/test.sqlite3");
+    db_.on('trace',function (stmt) {
+        require('debug')('sqlite3')(stmt);
     });
-    callback(null);
-};
-//TODO:实现添加用户
-/*
-* 添加用户
-* */
-User.prototype.add=function(username,callback){
-    db.run("INSERT into users VALUES(username,)");
+    async.series([
+        function (callback) {
+            db_.run("BEGIN IMMEDIATE TRANSACTION",function (err) {
+                if (err) callback(err);
+                else callback();
+            });
+        },
+        function (callback) {
+            if (that.data.userid===undefined || that.data.userid===null && !that.data.username){
+                debug('save: insert');
+                db_.run("INSERT INTO users(username) VALUES (?)",that.data.username,function (err) {
+                    debug('callback on insert');
+                    if (err) {debug('error on insert+'+err);callback(err);}
+                    else callback();
+                });
+            }else
+                callback();
+        },function (callback) {
+            async.eachSeries(Object.keys(that.data),function (key,callback2) {
+                var val=that.data[key];
+                debug('updating '+key);
+                if (key==="userid"||key==="username"){//并不能修改的东西
+                    return callback2();
+                }
+                if (key==="password"||key==="password_salt"){
+                    val=val.toString('hex');
+                }
+                db_.run("UPDATE users SET "+key+" = ? WHERE username= ?",[val,that.data.username],function (err) {
+                    if (err) callback2(err);
+                    else callback2();
+                });
+            },function (err) {
+                if (err) {
+                    return callback(err);
+                }
+                else
+                    return callback(null);
+            });
+        },function (callback) {
+            debug('end transaction');
+            db_.run("END TRANSACTION",function (err) {
+                debug("err"+err);
+                if (err) callback(err);
+                else callback();
+            })
+        }
+    ],function (err,result) {
+        db_.close();
+        debug('db_ closed');
+        if (err)
+        {
+            return callback(err);
+        }
+        else{
+            return callback(null);
+        }
+    });
+    //TODO:要保证INSERT INTO 在下面的UPDATE之前执行
+
+
 };
 User.prototype.getID=function(){
 	return this.data.userid;

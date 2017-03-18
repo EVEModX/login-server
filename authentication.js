@@ -3,11 +3,12 @@
  * 此模块处理权限相关问题，包括获取token、更改密码、更改权限之类
  * @author hanyuwei70 hanyuwei70@qq.com
  * */
+var _=require('lodash');
 var express=require('express');
 var crypto=require('crypto');
 var data=require('./datasource');
 var config = require("./config.js");
-var debug=require('debug');
+var debug=require('debug')('authentication');
 var async=require('async');
 var redis=require('redis'),
     rdsclient=redis.createClient();
@@ -22,17 +23,18 @@ var router=express.Router();
 * - * user.add 添加用户
 * */
 /*
-* 请求token
+* 请求/续期token
 * @param {string} username 用户名
 * @param {string} password 密码
 * */
 function login(req,resp){ //负责给新的token，
-    console.log("processing login request:"+req.baseUrl);
+    console.log("processing login request:"+req.path);
     var username=req.body.username,
         password=req.body.password,
         token=req.body.token;
     if (req.url==="/login"){ //登录
         console.log("login():processing /login");
+        debug('username:'+username+" password:"+password);
         data.User.findByName(username,function (err,user){
             if (err){
                 resp.status(500).write(JSON.stringify({error:"服务器内部错误"}));
@@ -91,6 +93,7 @@ function login(req,resp){ //负责给新的token，
 * 注销token
 * @param
 * */
+//TODO:注销token重写，改成可以选择token注销，同时让管理员有权限注销 token
 function logout(req,resp) { //实质为注销token
     var token_req=req.body.token_req;
     data.User.findByToken(token_req,function(err,user){
@@ -117,6 +120,17 @@ function logout(req,resp) { //实质为注销token
         });
     });
 }
+/*
+* 修改用户密码
+* 权限:
+*   - user.changepassword / user.changepassword.<user_id>
+* 默认用户可以更改自己的密码，无需添加节点
+* 表单:
+* @param {string} token 用户token (已在前面处理为req.user)
+* @param {string} userid 需要修改的用户ID
+* @param {string} newpassword 新密码
+* */
+//TODO:重写
 function changepassword(req,resp){
     var username_req=req.body.username_req,
         newpassword=req.body.newpassword;
@@ -146,7 +160,7 @@ function changepassword(req,resp){
 * */
 function authentication(req, resp, next){
     var token=req.body.token;
-    console.log("validating:"+req.originalUrl);
+    debug("authenticating...");
     if (req.originalUrl==="/login") next(); //登录请求不检查
     else if (req.originalUrl==="/") next();
     else if (req.originalUrl.endsWith(".html")) next();
@@ -203,11 +217,47 @@ function authentication(req, resp, next){
 function authorization(req,resp,next){
     async.series([
         function (callback) {
-            if (config.debug)
-            if (req.)
+            debug('authorize: '+req.path);
+            switch (req.path){
+                case "/login":
+                case "/renew":
+                case "/logout":
+                    return callback(null);
+                    break;
+                case "/changepassword":
+                    if (req.user===undefined || req.user===null)
+                        return callback(null,{status:401});
+                    if (req.user.getID()==req.userid || req.user.getID()===0)
+                        return callback(null);
+                    //TODO:检查"user.changepassword"和"user.changepassword.<user_id>节点"
+                    return callback(null,{status:403});
+                    break;
+                case "/adduser":
+                    if (req.user===undefined || req.user===null)
+                        return callback(null,{status:401});
+                    if (req.user.getID()===0)
+                        return callback(null);
+                    //TODO:检查 "user.add"节点
+                    return callback(null,{status:403});
+                    break;
+                default:
+                    callback(null);
+            }
         }
     ],function (err,result) {
-        if (err)
+        debug('authorize result: err:'+err+' result:'+result);
+        if (err){
+            resp.status(500).end();
+            return;
+        }
+        if (result.status===undefined){
+            next();
+        }else{
+            resp.status(result.status);
+            if (result.msg!==undefined) //TODO:仔细检查result类型
+                resp.write(JSON.stringify({error:result.msg}));
+            resp.end();
+        }
     });
 }
 /*
@@ -224,36 +274,49 @@ function adduser(req,resp){
     newuser.data.username=req.body.username;
     var plainpass=req.body.password;
     newuser.data.nickname=req.body.nickname;
-    if (newuser.data.username===undefined ||
-        newuser.data.username===null||
-        plainpass===undefined ||
-        plainpass===null){
-        resp.status(400).write(JSON.stringify("username or password missing"));
+    if (_.isEmpty(newuser.data.username) || !_.isString(newuser.data.username)||
+        _.isEmpty(plainpass) || !_.isString(plainpass)){
+        resp.status(400).write(JSON.stringify({error:"username or password missing"}));
         resp.end();
         return;
     }
     async.series([
         function (callback) {
-            newuser.setPass(plainpass,callback);
+            debug('adduser setting password');
+            newuser.setPass(plainpass,function (err) {
+                if (err)
+                    return callback(err);
+                else
+                    return callback(null);
+            });
         },
         function (callback) {
-            newuser.save(callback);
+            debug('adduser saving user');
+            newuser.save(function (err) {
+                if (err)
+                    return callback(err);
+                else
+                    return callback(null);
+            });
         }
     ],function (err,result) {
+        debug("adduser err:"+err);
         if (err) {
             if (err.errno===19){
                 //碰到SQL约束
-                if (err.message.indexOf("user.username")!==-1){
+                if (err.message.indexOf("users.username")!==-1){
                     //用户名重名
-                    resp.status(409).write(JSON.stringify({error:"username existed"})).end();
+                    resp.status(409).write(JSON.stringify({error:"username existed"}));
+                    resp.end();
                 }else{
                     resp.status(500).end();
                 }
             }else{
                 resp.status(500).end();
             }
+        }else {
+            resp.status(200).end();
         }
-        resp.status(200).end();
     });
 }
 /*
