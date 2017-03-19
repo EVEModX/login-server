@@ -22,19 +22,22 @@ var router=express.Router();
 * * user.modify 可以修改所有用户数据
 * - * user.add 添加用户
 * */
+//TODO:完成所有请求的权限控制
 /*
 * 请求/续期token
 * @param {string} username 用户名
 * @param {string} password 密码
 * */
-function login(req,resp){ //负责给新的token，
-    console.log("processing login request:"+req.path);
+function login(req,resp){
     var username=req.body.username,
         password=req.body.password,
         token=req.body.token;
     if (req.url==="/login"){ //登录
-        console.log("login():processing /login");
         debug('username:'+username+" password:"+password);
+        if (!_.isString(username) || !_.isString(password) || _.isEmpty(username) || _.isEmpty(password)){
+            resp.status(401).end();
+            return;
+        }
         data.User.findByName(username,function (err,user){
             if (err){
                 resp.status(500).write(JSON.stringify({error:"服务器内部错误"}));
@@ -44,7 +47,10 @@ function login(req,resp){ //负责给新的token，
             }
             if (user!==undefined && user.checkPass(password)) {
                 crypto.randomBytes(8,function(err,buf){ //64bit token 应该足够 //TODO:重写
-                    if (err) throw (err);
+                    if (err){
+                        resp.status(500).end();
+                        return;
+                    }
                     var expiretime=Math.floor(Date.now() / 1000)+config.security.tokenLivetime;
                     user.requireToken(expiretime,function(err,token){
                         if (err) {resp.status(500).end();console.log(err);return;}
@@ -60,7 +66,12 @@ function login(req,resp){ //负责给新的token，
         });
     }
     else if (req.url==="/renew"){ //续期token
-        data.User.findByName(username,function (err,user){
+        debug('renewing token:'+token);
+        if (!_.isString(token)||_.isEmpty(token)){
+            resp.status(401).end();
+            return;
+        }
+        data.User.findByToken(token,function (err,user){
             if (err){
                 resp.status(500).write(JSON.stringify({error:"服务器内部错误"}));
                 console.log(err);
@@ -69,12 +80,25 @@ function login(req,resp){ //负责给新的token，
             }
             if (user!==undefined){
                 crypto.randomBytes(8,function(err,buf){ //64bit token 应该足够
-                    if (err) throw (err);
+                    if (err){
+                        resp.status(500).end();
+                        return;
+                    }
                     var expiretime=Math.floor(Date.now() / 1000)+config.security.tokenLivetime;
-                    user.setToken(buf,expiretime,function(err){
-                        if (err) throw (err);
-                        resp.status(200).write(JSON.stringify({token:token,expiretime:expiretime}));
-                        resp.end();
+                    user.requireToken(expiretime,function(err,newToken){
+                        if (err){
+                            resp.status(500).end();
+                            return;
+                        }
+                        user.clearToken(token,function (err) {
+                            if (err){
+                                resp.status(500).end();
+                            }else{
+                                debug('old token revoked');
+                                resp.status(200).write(JSON.stringify({token:newToken.toString('hex'),expiretime:expiretime}));
+                                resp.end();
+                            }
+                        });
                     });
                 });
             }else{
@@ -91,23 +115,32 @@ function login(req,resp){ //负责给新的token，
 }
 /*
 * 注销token
-* @param
+* 权限
+*   - user.modify
+*   普通用户可以注销自己的任意token
+* 表单
+*   @param {string} token (已变成req.user)
+*   @param {string} token_req 请求注销的token
 * */
 //TODO:注销token重写，改成可以选择token注销，同时让管理员有权限注销 token
-function logout(req,resp) { //实质为注销token
+function logout(req,resp) {
     var token_req=req.body.token_req;
+    debug('logout processing');
     data.User.findByToken(token_req,function(err,user){
         if (err){
             resp.status(500);
+            console.log(err);
             resp.write(JSON.stringify({error:"Internal Server Error"}));
             resp.end();
             return;
         }
         if (user===undefined){
+            debug('the user of token not found');
             resp.status(401).write(JSON.stringify({error:"the user of token not found"}));
             resp.end();
             return;
         }
+        debug('token found,revoking');
         user.clearToken(token_req,function(err){
             if (err) {
                 resp.status(500);
@@ -115,16 +148,34 @@ function logout(req,resp) { //实质为注销token
                 resp.end();
                 return;
             }
-            resp.status(200).write(JSON.stringify({msg:"Token successfully cleared"}));
+            debug('token revoked');
+            resp.status(200).write(JSON.stringify({msg:"Token revoked"}));
             resp.end();
         });
     });
 }
 /*
+* 列出某个用户所有token
+* 权限
+*   - user.modify
+* 用户默认只可以列出自己的所有token
+* 授权在自己这里完成
+* 表单:
+*   @param {string} token (已转换为req.user)
+*   @param {string} [uid] 需要列出的用户ID(默认为req.user)
+* */
+function listToken() {
+    //TODO:实现
+    //TODO:实现授权
+}
+    
+
+/*
 * 修改用户密码
 * 权限:
 *   - user.changepassword / user.changepassword.<user_id>
 * 默认用户可以更改自己的密码，无需添加节点
+* TODO:修改密码后，所有token全部失效
 * 表单:
 * @param {string} token 用户token (已在前面处理为req.user)
 * @param {string} userid 需要修改的用户ID
@@ -132,9 +183,13 @@ function logout(req,resp) { //实质为注销token
 * */
 //TODO:重写
 function changepassword(req,resp){
-    var username_req=req.body.username_req,
-        newpassword=req.body.newpassword;
-    data.User.findByName(username_req,function(err,user){
+    var uid_req=req.body.userid,
+        newpass=req.body.newpassword;
+    if (_.isEmpty(uid_req) || !_.isInteger(uid_req) || !_.isString(newpass) || _.isEmpty(newpass)){
+        resp.status(400).write(JSON.stringify({error:"missing arguments"}));
+        return;
+    }
+    data.User.findById(uid_req,function(err,user){
         if (err){
             resp.status(500);
             resp.write(JSON.stringify({error:"Internal Server Error"}));
@@ -160,7 +215,7 @@ function changepassword(req,resp){
 * */
 function authentication(req, resp, next){
     var token=req.body.token;
-    debug("authenticating...");
+    //debug("authenticating...");
     if (req.originalUrl==="/login") next(); //登录请求不检查
     else if (req.originalUrl==="/") next();
     else if (req.originalUrl.endsWith(".html")) next();
@@ -183,28 +238,6 @@ function authentication(req, resp, next){
                 resp.end();
                 return;
             }
-            if (user===undefined) {
-                resp.status(401);
-                resp.write(JSON.stringify({msg: "Token is invalid or timed out"}));
-                resp.end();
-                return;
-            }
-            if(req.originalUrl==="/changepassword"){//修改密码操作
-                if (user.data.userid!==1 && user.data.username!==req.body.username_req){
-                    resp.status(403);
-                    resp.write(JSON.stringify({msg:"Not allowed."}));
-                    resp.end();
-                    return;
-                }
-            }
-            if (req.originalUrl==="/logout"){ //登出
-                if (req.body.token!==req.body.token_req && user.data.userid!==1) {
-                    resp.status(403);
-                    resp.write(JSON.stringify({msg:"Not allowed."}));
-                    resp.end();
-                    return;
-                }
-            }
             req.user=user;
             next();
             //TODO:实现检查用户的权限和各个操作所需要的权限比对
@@ -221,6 +254,7 @@ function authorization(req,resp,next){
             switch (req.path){
                 case "/login":
                 case "/renew":
+                case '/listtoken': // listtoken在自己那里完成授权
                 case "/logout":
                     return callback(null);
                     break;
@@ -230,7 +264,7 @@ function authorization(req,resp,next){
                     if (req.user.getID()==req.userid || req.user.getID()===0)
                         return callback(null);
                     //TODO:检查"user.changepassword"和"user.changepassword.<user_id>节点"
-                    return callback(null,{status:403});
+                    return callback(null,{status:403,msg:"in changepassword"});
                     break;
                 case "/adduser":
                     if (req.user===undefined || req.user===null)
@@ -238,7 +272,7 @@ function authorization(req,resp,next){
                     if (req.user.getID()===0)
                         return callback(null);
                     //TODO:检查 "user.add"节点
-                    return callback(null,{status:403});
+                    return callback(null,{status:403,msg:"in adduser"});
                     break;
                 default:
                     callback(null);
@@ -374,6 +408,7 @@ router.post('/renew',login);
 router.post('/logout',logout);
 router.post('/changepassword',changepassword);
 router.post('/adduser',adduser);
+router.post('/listtoken',listToken);
 module.exports=router;
 exports.querynode=querynode;
 exports.addnode=addnode;
