@@ -22,7 +22,6 @@ var router=express.Router();
 var db=new sqlite3.Database(__dirname+"/accounts.sqlite3").once('error',function (err) {
     console.error('error on opening '+__dirname+"/accounts.sqlite3");
 });
-//TODO:重写权限字符串
 /*
 * 权限系统：(accounts.*)
 *   - accounts.add
@@ -223,7 +222,6 @@ function authorization(req, resp, next){
 			resp.status(403).end();
 		}else if (result.error){
 			resp.status(500).end();
-			//TODO:记录错误
 		}else{
 			var reject=function () {
 				resp.status(403).end();

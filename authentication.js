@@ -175,18 +175,17 @@ function listToken() {
 * 权限:
 *   - user.changepassword / user.changepassword.<user_id>
 * 默认用户可以更改自己的密码，无需添加节点
-* TODO:修改密码后，所有token全部失效
 * 表单:
 * @param {string} token 用户token (已在前面处理为req.user)
 * @param {string} userid 需要修改的用户ID
 * @param {string} newpassword 新密码
 * */
-//TODO:重写
 function changepassword(req,resp){
     var uid_req=req.body.userid,
         newpass=req.body.newpassword;
-    if (_.isEmpty(uid_req) || !_.isInteger(uid_req) || !_.isString(newpass) || _.isEmpty(newpass)){
+    if (!_.isInteger(uid_req) || !_.isString(newpass) || _.isEmpty(newpass)){
         resp.status(400).write(JSON.stringify({error:"missing arguments"}));
+        resp.end();
         return;
     }
     data.User.findById(uid_req,function(err,user){
@@ -196,14 +195,31 @@ function changepassword(req,resp){
             resp.end();
             return;
         }
-        user.setPass(newpassword);
-        user.clearallToken(user.data.userid,function (err) {
+        if (user===undefined){
+            resp.status(404).write(JSON.stringify({error:"requested user not found"}));
+            resp.end();
+            return;
+        }
+        user.setPass(newpass,function(err){
             if (err){
-                resp.status(500);
-                resp.write(JSON.stringify({error:"Internal Server Error"}));
-                resp.end();
+                resp.status(500).end();
                 return;
             }
+            user.clearallToken(user.data.userid,function (err) {
+                if (err){
+                    resp.status(500);
+                    resp.write(JSON.stringify({error:"Internal Server Error"}));
+                    resp.end();
+                    return;
+                }
+                user.save(function (err) {
+                    if (err){
+                        resp.status(500).end();
+                        return;
+                    }
+                    resp.status(200).end();
+                });
+            });
         });
     });
 }
@@ -261,7 +277,7 @@ function authorization(req,resp,next){
                 case "/changepassword":
                     if (req.user===undefined || req.user===null)
                         return callback(null,{status:401});
-                    if (req.user.getID()==req.userid || req.user.getID()===0)
+                    if (req.user.getID()===req.body.userid || req.user.getID()===0)
                         return callback(null);
                     //TODO:检查"user.changepassword"和"user.changepassword.<user_id>节点"
                     return callback(null,{status:403,msg:"in changepassword"});
@@ -279,12 +295,15 @@ function authorization(req,resp,next){
             }
         }
     ],function (err,result) {
+        if (result!==undefined){
+            result=result[0];
+        }
         debug('authorize result: err:'+err+' result:'+result);
         if (err){
             resp.status(500).end();
             return;
         }
-        if (result.status===undefined){
+        if (result===undefined || result.status===undefined){
             next();
         }else{
             resp.status(result.status);
@@ -308,7 +327,7 @@ function adduser(req,resp){
     newuser.data.username=req.body.username;
     var plainpass=req.body.password;
     newuser.data.nickname=req.body.nickname;
-    if (_.isEmpty(newuser.data.username) || !_.isString(newuser.data.username)||
+    if (_.isEmpty(newuser.data.username) || !_.isString(newuser.data.username)|| newuser.data.username.match(/\s/) ||
         _.isEmpty(plainpass) || !_.isString(plainpass)){
         resp.status(400).write(JSON.stringify({error:"username or password missing"}));
         resp.end();

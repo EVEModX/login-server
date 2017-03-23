@@ -148,27 +148,6 @@ User.prototype.checkToken=function (token,callback){ //检查这个token是不�
 };
 User.prototype.save=function(callback){ //把用户数据写回数据库
     var that=this;
-    /*var keys=Object.keys(this.data);
-    if (this.data.userid===undefined || this.data.userid===null && !this.data.username){
-        //新用户添加
-        db.run("INSERT INTO users(username) VALUES (?)",this.data.username,function (err,row) {
-            if (err) return callback(err);
-        });
-    }
-    for (var i=0;i<keys.length;++i){
-        var key=keys[i];
-        var val=this.data[key];
-        if (key==="userid" || key==="username")
-            continue;
-        if (key==="password" || key==="password_salt")
-            val=val.toString('hex');
-        db.run("UPDATE users SET "+key+" = ? WHERE userid= ?",[val,this.data.userid],function (err) {
-            callback(err);
-        });
-    }
-    db.run("END",function(err){
-        return callback(err);
-    });*/
     var db_=new sqlite3.Database(__dirname+"/test.sqlite3");
     db_.on('trace',function (stmt) {
         require('debug')('sqlite3')(stmt);
@@ -230,9 +209,6 @@ User.prototype.save=function(callback){ //把用户数据写回数据库
             return callback(null);
         }
     });
-    //TODO:要保证INSERT INTO 在下面的UPDATE之前执行
-
-
 };
 User.prototype.getID=function(){
 	return this.data.userid;

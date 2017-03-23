@@ -48,9 +48,22 @@ function setUserinfo(req,resp){
         }
         newinfo=JSON.parse(newinfo);
         user.data.nickname=newinfo.nickname;
-        resp.status(204).end();
+        resp.status(200).end();
     });
 }
+function authorziation(req,resp,next) {
+    if (req.path==='/setinfo'){
+        if (req.user.getID()===0 || req.user.data.username===req.body.username_req)
+            next();
+        else{
+            resp.status(403).end();
+        }
+    }
+    else{
+        next();
+    }
+}
+router.use(authorziation);
 router.post('/getinfo',getUserinfo);
 router.post('/setinfo',setUserinfo);
 module.exports=router;
