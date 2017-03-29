@@ -40,7 +40,7 @@ var db=new sqlite3.Database(__dirname+"/accounts.sqlite3").once('error',function
 * 表单
 *   :param token 用户token
 *   :param account json编码的EVE账号信息 {username:<username>,password:<password>}
-*   :param account_owner EVE账号所属ID
+*   :param [account_owner=(token所指定的用户)] EVE账号所属ID
 * */
 //TODO:数据一致性
 function addaccount(req,resp){
@@ -54,7 +54,7 @@ function addaccount(req,resp){
 	var newaccount={};
 	newaccount.username=eveacc.username;
 	newaccount.password=eveacc.password;
-	newaccount.owner=user.getID();
+	newaccount.owner=req.body.account_owner || req.user.getID();
 	rdsclient.get("account_cnt",function(err,reply){
 		if (err){
 			resp.status(500).write().end();

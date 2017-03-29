@@ -8,13 +8,17 @@ var should=require('should');
 var sqlite3=require('sqlite3');
 var redis=require('redis'),
     rdsclient=redis.createClient();
+var async = require("async");
 
 describe('main.js',function () {
     var loginname="root",password="root",token,token2;
     before('init database',function(done){
         var db=new sqlite3.Database(__dirname+"/../test.sqlite3");
         db.run("DELETE FROM tokens",function () {
-            db.run("DELETE FROM users WHERE NOT username=\'root\'",done);
+            db.run("DELETE FROM users WHERE NOT username=\'root\'",function (err) {
+                if (err) throw err;
+                db.close(done);
+            });
         });
     });
     describe('static-module',function () {
@@ -178,8 +182,56 @@ describe('main.js',function () {
         });
     });
     describe('accounts module',function () {
+        var tokens=[];
+        var roottoken;
+        var users=[{username:"pibc",password:"pibc"},{username:"tga",password:"tga"},{username:"fbp",password:"fbp"}];
+        var db=new sqlite3.Database(__dirname+"/../test.sqlite3");
         before('clear all accounts and privileges',function (done) {
+            async.series([
+                function (cb) {
+                    db.run("DELETE FROM tokens",function (err) {
+                        if (err) cb(err);
+                        db.run("DELETE FROM users WHERE NOT username=\'root\'",function (err) {
+                            if (err) cb(err);
+                            db.close(cb);
+                        });
+                    })
+                },
+                function (cb) {
+                    rdsclient.flushall(cb);
+                },
+                function (cb) {
+                    request.post('/login').send({username:"root",password:"root"})
+                        .expect(function (res) {
+                            res=JSON.parse(res.text);
+                            roottoken=res.token;
+                        }).expect(200,cb);
+                },
+                function (cb) {
+                    async.each(users,function (user,cb2) {
+                        request.post('/adduser').send(Object.assign({token:roottoken},user))
+                            .expect(200,cb2);
+                    },cb);
+                },
+                function (cb) {
+                    async.each(users,function (user,cb2) {
+                        request.post('/login').send(user)
+                            .expect(function (res) {
+                                res=JSON.parse(res.text);
+                                tokens.push(res.token);
+                            }).expect(200,cb2);
+                    },cb);
+                }
+            ],function (err,res) {
+                if (err) throw err;
+                done();
+            });
         });
+        it('should add eve account',function (done) {
+            request.post('/accounts/add').send({token:tokens[0],account:"{username:test,password:test}"})
+                .expect(200,done);
+        });
+        it('should get eve account');
     });
     describe('userinfo module',function () {
 
