@@ -11,8 +11,10 @@
 * 每个用户都有一个私钥对，存放在服务器上，私钥用客户密码hash加密
 * A用户授权B用户使用账号X时，用A的密码解锁私钥，私钥解锁账户密码，然后用B的公钥加密存入
 * */
+var debug=require('supertest')('accounts');
 var express=require('express');
 var auth=require('./authentication');
+var _=require('lodash');
 var sqlite3=require('sqlite3');
 var ds=require('./datasource');
 var redis=require('redis'),
@@ -25,11 +27,12 @@ var db=new sqlite3.Database(__dirname+"/accounts.sqlite3").once('error',function
 /*
 * 权限系统：(accounts.*)
 *   - accounts.add
-*   - accounts.edit.<account_id> 仅由所有者拥有，包括删除
+*   - accounts.edit
 *     |
-*     +-accounts.give.<account_id>
+*     +-accounts.give
 *       |
-*       +-accounts.getToken.<account_id>
+*       +-accounts.getToken
+*   - account.<account_id>.edit 仅由所有者拥有，包括删除
 * */
 
 
@@ -191,49 +194,34 @@ function get_accounts(req, resp) {
 		resp.status(200).write(JSON.stringify(reply)).end();
     });
 }
+function calcPermission(role,resource,action,callback) {
+    
+}
 function authorization(req, resp, next){
-	console.log(req.path);
-	var user=req.user,
+	debug('authorize: '+req.path);
+	let user=req.user,
 		aid=req.body.account_id;
 	async.series([
-		function (callback) {
-			auth.querynode(user.getID(),"accounts.edit."+aid.toString(),function (err,reply) {
-				if (err) return callback({error:err});
-				if (reply===1) return callback({data:"edit"});
-				callback();
-            })
-        },
-		function (callback) {
-			auth.querynode(user.getID(),"accounts.give."+aid.toString(),function (err,reply) {
-				if (err) return callback({error:err});
-				if (reply===1) return callback({data:"give"});
-				callback();
-            })
-        },
-		function (callback) {
-			auth.querynode(user.getID(),"accounts.getToken."+aid.toString(),function (err,reply) {
-				if (err) return callback({error:err});
-				if (reply===1) return callback({data:"getToken"});
-				callback();
-            })
+		function (cb) {
+	        if (_.isEmpty(aid)){
+	            cb(null,{status:400,msg:"missing account id"});
+            }
+	        if (_.isEmpty(user)){
+	            cb(null,{status:403});
+            }else if (req.path==="/add"){
+                cb(null);
+            }else if (req.path==="/edit"){
+                calcPermission("user."+req.user.getID(),"account."+aid.toString(),"edit",function (err,result) {
+                    if (err) return cb(err);
+                    else callback(null,result?undefined:{status:403});
+                });
+            }else if (req.path==='/get_accounts'){
+                calcPermission("user."+req.user.getID(),"user."+aid.toString(),"view",function (err,result) {
+                    
+                });
+            }
         }
-	],function (result) {
-		if (!result && req.path!="/add"){
-			resp.status(403).end();
-		}else if (result.error){
-			resp.status(500).end();
-		}else{
-			var reject=function () {
-				resp.status(403).end();
-            };
-			if (req.path==="/give" && result.data==="getToken"){
-				reject();
-            }else if (req.path==="/edit" && req.path==="/delete" && result.data==="give"){
-				reject();
-			}else{
-            	next();
-			}
-		}
+	],function (err,result) {
     });
 }
 router.use(authorization);

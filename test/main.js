@@ -128,14 +128,14 @@ describe('main.js',function () {
                 })
                 .expect(200,function (err) {
                     if (err) throw err;
-                    request.post('/adduser')
+                    request.post('/register')
                         .send({token:token,username:"test1",password:"test1",nickname:"test1"})
                         .expect(200,done);
                 });
         });
         addusers.forEach(function (test) {
             it('should add user '+test.name,function (done) {
-                request.post('/adduser')
+                request.post('/register')
                    .send(test.args)
                    .expect(test.expected,done);
             });
@@ -189,6 +189,7 @@ describe('main.js',function () {
         before('clear all accounts and privileges',function (done) {
             async.series([
                 function (cb) {
+                console.log("1");
                     db.run("DELETE FROM tokens",function (err) {
                         if (err) cb(err);
                         db.run("DELETE FROM users WHERE NOT username=\'root\'",function (err) {
@@ -198,9 +199,11 @@ describe('main.js',function () {
                     })
                 },
                 function (cb) {
+                    console.log("2");
                     rdsclient.flushall(cb);
                 },
                 function (cb) {
+                    console.log("3");
                     request.post('/login').send({username:"root",password:"root"})
                         .expect(function (res) {
                             res=JSON.parse(res.text);
@@ -208,12 +211,14 @@ describe('main.js',function () {
                         }).expect(200,cb);
                 },
                 function (cb) {
+                    console.log("4");
                     async.each(users,function (user,cb2) {
-                        request.post('/adduser').send(Object.assign({token:roottoken},user))
+                        request.post('/register').send(Object.assign({token:roottoken},user))
                             .expect(200,cb2);
                     },cb);
                 },
                 function (cb) {
+                    console.log("5");
                     async.each(users,function (user,cb2) {
                         request.post('/login').send(user)
                             .expect(function (res) {
@@ -222,10 +227,45 @@ describe('main.js',function () {
                             }).expect(200,cb2);
                     },cb);
                 }
-            ],function (err,res) {
+            ],function (err) {
+                console.log("6");
                 if (err) throw err;
                 done();
             });
+/*
+                db.run("DELETE FROM tokens",function (err) {
+                    if (err) throw err;
+                    db.run("DELETE FROM users WHERE NOT username=\'root\'",function (err) {
+                        if (err) throw err;
+                        db.close(function (err) {
+                            if (err) throw err;
+                            rdsclient.flushall(function (err) {
+                                if (err) throw err;
+                                request.post('/login').send({username:"root",password:"root"})
+                                    .expect(function (res) {
+                                        res=JSON.parse(res.text);
+                                        roottoken=res.token;
+                                    }).expect(200,function(err){
+                                        "use strict";
+                                        if (err) throw err;
+                                        async.each(users,function (user,cb2) {
+                                            request.post('/register').send(Object.assign({token: roottoken}, user))
+                                                .expect(200, cb2);
+                                        },function(err){
+                                            if (err) throw err;
+                                            async.each(users,function (user,cb2) {
+                                                request.post('/login').send(user)
+                                                    .expect(function (res) {
+                                                        res=JSON.parse(res.text);
+                                                        tokens.push(res.token);
+                                                    }).expect(200,cb2);
+                                            },done);
+                                        });
+                                    });
+                            });
+                        });
+                    });
+                });*/
         });
         it('should add eve account',function (done) {
             request.post('/accounts/add').send({token:tokens[0],account:"{username:test,password:test}"})

@@ -47,7 +47,7 @@ function setUserinfo(req,resp){
             return;
         }
         newinfo=JSON.parse(newinfo);
-        user.data.nickname=newinfo.nickname;
+        user.setNickname(newinfo.nickname);
         resp.status(200).end();
     });
 }

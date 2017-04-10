@@ -2,7 +2,7 @@
 * 抽象数据接口,sqlite3版本
 * */
 var sqlite3=require("sqlite3").verbose();
-
+var _=require('lodash');
 var debug=require("debug")('datasource');
 var crypto=require("crypto");
 var config=require("./config");
@@ -14,8 +14,8 @@ db.on('trace',function (stmt) {
 /*
 * User接口 实现用户数据相关
 * */
-var User=function (data){
-    if (data===undefined || data===null){
+function User(data){
+    if (data===undefined || data===null){ //创建一个新用户(自然也不会有username/password)
         this.data={};
         this.data.username="";
         this.data.password="";
@@ -24,23 +24,23 @@ var User=function (data){
         this.data.password=new Buffer((this.data.password==null)?"":this.data.password,'hex');
         this.data.password_salt=new Buffer((this.data.password_salt==null)?"":this.data.password_salt,'hex');
     }
-};
+}
 /*
 * User对象字段
-* username 用户名 (ASCII)
-* userid 用户ID (int)
-* nickname 用户显示的昵称 (UTF-8)
-* password 存储的密码，和password_salt一起验证 长度32的十六进制字符串
-* password_salt 密码盐 长度16字节
-* token 存储的用户token
-* token_expire 用户token的过期时间
+* username string 用户名
+* userid int 用户ID
+* nickname string 用户显示的昵称
+* password Buffer(16) 存储的密码hash
+* password_salt Buffer(16) 密码盐
+*
+* User只管理最基本的鉴权，包括后期的2FA都不管，另外写模块处理
 * */
-User.data={};
-User.prototype.changeNickname=function(newname){
-    this.data.nickname=newname;
-};
-
-User.findById=function (id,callback) {  //通过ID找到用户
+/*
+* 根据ID找到用户
+* @param id
+* @callback 回调函数
+* */
+User.findById=function (id,callback) {
     db.get("SELECT * FROM users WHERE userid=?",id,function(err,row){
         if (err) callback(err);
         if (row===undefined) //没有找到对应用户
@@ -88,13 +88,30 @@ User.findByToken=function (token,callback){
             });
     });
 };
-User.prototype.checkPass=function (plainpass){ //检查password是不是用户的密码
-    var password=this.data.password,
+/*
+ * 修改用户昵称 sync
+ * @param name string 新的用户昵称
+ * */
+User.prototype.setNickname=function (name) {
+        this.data.nickname=name;
+};
+/*
+* 检查密码是否匹配 sync
+* @param plainpass string 明文密码
+* @return boolean 返回密码比对结果
+* */
+User.prototype.checkPass=function (plainpass){
+    let password=this.data.password,
         salt=this.data.password_salt;
-    var key=crypto.pbkdf2Sync(plainpass,salt,config.security.pbkdf2_iter,16,'sha512');
+    let key=crypto.pbkdf2Sync(plainpass,salt,config.security.pbkdf2_iter,16,'sha512');
     return Buffer.compare(password,key)===0;
 };
-User.prototype.setPass=function (plainpass,callback){  //设置用户密码
+/*
+* 设置用户密码
+* @param plainpass string 明文密码
+* @callback err:错误
+* */
+User.prototype.setPass=function (plainpass,callback){
     var that=this;
     crypto.randomBytes(16,function (err,buf){
         if (err)
@@ -104,11 +121,16 @@ User.prototype.setPass=function (plainpass,callback){  //设置用户密码
                 return callback(err);
             that.data.password=key;
             that.data.password_salt=buf;
-            callback(null,true);
+            callback(null);
         });
     });
 };
-User.prototype.requireToken=function (expire,callback){ //请求一个用户的token userid:用户ID expire:过期时间(UTC表示)
+/*
+* 请求一个 token
+* @param expire int64 请求的过期时间 (UNIX timestamp)
+* @callback err:错误 token:返回的token(Buffer)
+* */
+User.prototype.requireToken=function (expire,callback){
     var that=this;
     crypto.randomBytes(16,function(err,buf){
         if (err) callback(err);
@@ -121,7 +143,12 @@ User.prototype.requireToken=function (expire,callback){ //请求一个用户的t
         });
     });
 };
-User.prototype.clearToken=function (token,callback){ //清除用户的token
+/*
+* 注销某个token
+* @param token string 要被注销的token
+* @callback err:错误
+* */
+User.clearToken=function (token,callback){
     db.run("DELETE FROM tokens WHERE token=?",token,function(err){
         if (err)
             return callback(err);
@@ -129,7 +156,12 @@ User.prototype.clearToken=function (token,callback){ //清除用户的token
             return callback(null);
     });
 };
-User.prototype.clearallToken=function(userid,callback){
+/*
+* 注销某个userid所代表用户的所有 token
+* @param userid int 用户ID
+* @callback err:错误
+* */
+User.clearAllToken=function(userid, callback){
     db.run("DELETE FROM tokens WHERE userid=?",userid,function(err){
         if (err)
             return callback(err);
@@ -137,15 +169,16 @@ User.prototype.clearallToken=function(userid,callback){
             return callback(null);
     });
 };
-User.prototype.checkToken=function (token,callback){ //检查这个token是不是属于自己
-    var that=this;
-    db.get("SELECT * FROM tokens WHERE token=?",token,function(err,row){
-        if (err)
-            callback(err);
-        if (row===undefined) callback(null,false);
-        else callback(null,row.userid===that.data.userid);
-    });
+/*
+* 获取当前用户ID
+* @return int 当前用户ID
+* */
+User.prototype.getID=function(){
+    return this.data.userid;
 };
+/*
+* save 将用户数据写回数据库
+* */
 User.prototype.save=function(callback){ //把用户数据写回数据库
     var that=this;
     var db_=new sqlite3.Database(__dirname+"/test.sqlite3");
@@ -171,7 +204,7 @@ User.prototype.save=function(callback){ //把用户数据写回数据库
                 callback();
         },function (callback) {
             async.eachSeries(Object.keys(that.data),function (key,callback2) {
-                var val=that.data[key];
+                let val=that.data[key];
                 debug('updating '+key);
                 if (key==="userid"||key==="username"){//并不能修改的东西
                     return callback2();
@@ -198,7 +231,7 @@ User.prototype.save=function(callback){ //把用户数据写回数据库
                 else callback();
             })
         }
-    ],function (err,result) {
+    ],function (err) {
         db_.close();
         debug('db_ closed');
         if (err)
@@ -210,7 +243,60 @@ User.prototype.save=function(callback){ //把用户数据写回数据库
         }
     });
 };
-User.prototype.getID=function(){
-	return this.data.userid;
+exports.Authorize={
+    /*
+    * 处理授权相关的查询
+    * */
+    /*
+    * 数据库表名
+    * 表结构
+    * role varchar 角色 类似 "<module>.<id>"
+    * resource varchar 资源
+    * action varchar 动作
+    * perm boolean 是否允许 目前阶段此字段保持为1(允许)
+    * CONSTRAINT permission UNIQUE (role,resource,action)
+    * */
+    TABLE_NAME:"privileges",
+    /*
+    * 设置权限记录
+    * @param role string 角色
+    * @param resource string 资源
+    * @param action string 动作
+    * @callback err:错误
+    * */
+    setPermission:function (role,resource,action,callback) {
+        "use strict";
+        if (_.isEmpty(role) || _.isEmpty(resource) || _.isEmpty(action))
+            return callback(new Error("args cannot be empty"));
+        db.run("INSERT INTO "+this.TABLE_NAME+" (role,resource,action,perm)" +
+            " VALUES(?,?,?) ON DUPLICATE KEY UPDATE",[role,resource,action],function (err,result) {
+            if (err) return callback(err);
+            else callback(null);
+        });
+    },
+    /*删除权限记录*/
+    delPermission:function (role,resource,action,callback) {
+        "use strict";
+        if (_.isEmpty(role) || _.isEmpty(resource) || _.isEmpty(action))
+            return callback(new Error("args cannot be empty"));
+        db.run("DELETE FROM "+this.TABLE_NAME+
+            " WHERE role=? AND resource=? AND action=?",[role,resource,action], function (err,result) {
+            if (err) return callback(err);
+            else return callback(null);
+        });
+    },
+    /*
+    * 查询权限记录
+    * @callback err:错误 result: perm字段的返回值，未找到返回 undefined
+    * */
+    getPermission:function (role, resource, action, callback) {
+        "use strict";
+        if (_.isEmpty(role) || _.isEmpty(resource) || _.isEmpty(action))
+            return callback(new Error("args cannot be empty"));
+        db.get("SELECT perm FROM "+this.TABLE_NAME+" WHERE role=? AND resource=? AND action=?",[role,resource,action],function (err,result) {
+            if (err) return callback(err);
+            return callback(null,(result===undefined)?undefined:result.perm);
+        });
+    }
 };
 exports.User=User;

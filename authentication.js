@@ -3,6 +3,7 @@
  * 此模块处理权限相关问题，包括获取token、更改密码、更改权限之类
  * @author hanyuwei70 hanyuwei70@qq.com
  * */
+"use strict";
 var _=require('lodash');
 var express=require('express');
 var crypto=require('crypto');
@@ -19,10 +20,15 @@ var router=express.Router();
 /*
 * 用户管理权限系统
 * * root (UID=0) 最高权限
-* * user.modify 可以修改所有用户数据
-* - * user.add 添加用户
+* + users.security_edit 对所有用户都具有修改权 包括安全信息
+*   |
+*   + users.edit 对所有用户都具有修改权 不包括安全信息
+*     |
+*     + users.view 可以查看所有用户的信息
+* + user.<user_id> 对特定的用户具有的权限 (一般不使用)
+* 每个用户对自己有 security_edit 权限，无法配置
+* 可能后续增加用户组，放在另外一个模块里
 * */
-//TODO:完成所有请求的权限控制
 /*
 * 请求/续期token
 * @param {string} username 用户名
@@ -33,13 +39,14 @@ function login(req,resp){
         password=req.body.password,
         token=req.body.token;
     if (req.url==="/login"){ //登录
-        debug('username:'+username+" password:"+password);
+        debug('logging username:'+username+" password:"+password);
         if (!_.isString(username) || !_.isString(password) || _.isEmpty(username) || _.isEmpty(password)){
             resp.status(401).end();
             return;
         }
         data.User.findByName(username,function (err,user){
             if (err){
+                debug('login 500');
                 resp.status(500).write(JSON.stringify({error:"服务器内部错误"}));
                 console.log(err);
                 resp.end();
@@ -48,17 +55,20 @@ function login(req,resp){
             if (user!==undefined && user.checkPass(password)) {
                 crypto.randomBytes(8,function(err,buf){ //64bit token 应该足够 //TODO:重写
                     if (err){
+                        debug('login 500')
                         resp.status(500).end();
                         return;
                     }
-                    var expiretime=Math.floor(Date.now() / 1000)+config.security.tokenLivetime;
+                    let expiretime=Math.floor(Date.now() / 1000)+config.security.tokenLivetime;
                     user.requireToken(expiretime,function(err,token){
                         if (err) {resp.status(500).end();console.log(err);return;}
+                        debug('login 200');
                         resp.status(200).write(JSON.stringify({token:token.toString('hex'),expiretime:expiretime,userid:user.data.userid}));
                         resp.end();
                     });
                 });
             }else{
+                debug('login 401');
                 resp.status(401);
                 resp.write(JSON.stringify({error:"username and password mismatch"}));
                 resp.end();
@@ -90,7 +100,7 @@ function login(req,resp){
                             resp.status(500).end();
                             return;
                         }
-                        user.clearToken(token,function (err) {
+                        data.User.clearToken(token,function (err) {
                             if (err){
                                 resp.status(500).end();
                             }else{
@@ -115,16 +125,13 @@ function login(req,resp){
 }
 /*
 * 注销token
-* 权限
-*   - user.modify
-*   普通用户可以注销自己的任意token
 * 表单
 *   @param {string} token (已变成req.user)
 *   @param {string} token_req 请求注销的token
 * */
 //TODO:注销token重写，改成可以选择token注销，同时让管理员有权限注销 token
 function logout(req,resp) {
-    var token_req=req.body.token_req;
+    let token_req=req.body.token_req;
     debug('logout processing');
     data.User.findByToken(token_req,function(err,user){
         if (err){
@@ -141,7 +148,7 @@ function logout(req,resp) {
             return;
         }
         debug('token found,revoking');
-        user.clearToken(token_req,function(err){
+        data.User.clearToken(token_req,function(err){
             if (err) {
                 resp.status(500);
                 resp.write(JSON.stringify({error:"Internal Server Error"}));
@@ -156,31 +163,23 @@ function logout(req,resp) {
 }
 /*
 * 列出某个用户所有token
-* 权限
-*   - user.modify
-* 用户默认只可以列出自己的所有token
-* 授权在自己这里完成
 * 表单:
 *   @param {string} token (已转换为req.user)
-*   @param {string} [uid] 需要列出的用户ID(默认为req.user)
+*   @param {string} [userid] 需要列出的用户ID(默认为req.user)
 * */
 function listToken() {
     //TODO:实现
     //TODO:实现授权
 }
-    
-
 /*
 * 修改用户密码
-* 权限:
-*   - user.changepassword / user.changepassword.<user_id>
-* 默认用户可以更改自己的密码，无需添加节点
 * 表单:
 * @param {string} token 用户token (已在前面处理为req.user)
 * @param {string} userid 需要修改的用户ID
 * @param {string} newpassword 新密码
 * */
 function changepassword(req,resp){
+    debug('processing changepassword');
     var uid_req=req.body.userid,
         newpass=req.body.newpassword;
     if (!_.isInteger(uid_req) || !_.isString(newpass) || _.isEmpty(newpass)){
@@ -205,7 +204,7 @@ function changepassword(req,resp){
                 resp.status(500).end();
                 return;
             }
-            user.clearallToken(user.data.userid,function (err) {
+            data.User.clearAllToken(user.data.userid,function (err) {
                 if (err){
                     resp.status(500);
                     resp.write(JSON.stringify({error:"Internal Server Error"}));
@@ -224,10 +223,91 @@ function changepassword(req,resp){
     });
 }
 /*
+ * 添加用户
+ * 表单
+ * @param {string} username 用户名
+ * @param {string} password 明文密码
+ * @param {string} [nickname] 昵称
+ * */
+function adduser(req,resp){
+    debug('adduser processing');
+    var newuser=new data.User();
+    newuser.data.username=req.body.username;
+    var plainpass=req.body.password;
+    newuser.data.nickname=req.body.nickname;
+    if (_.isEmpty(newuser.data.username) || !_.isString(newuser.data.username)|| newuser.data.username.match(/\s/) ||
+        _.isEmpty(plainpass) || !_.isString(plainpass)){
+        resp.status(400).write(JSON.stringify({error:"username or password missing"}));
+        debug('adduser return 400');
+        resp.end();
+        return;
+    }
+    async.series([
+        function (callback) {
+            debug('adduser setting password');
+            newuser.setPass(plainpass,function (err) {
+                if (err)
+                    return callback(err);
+                else
+                    return callback(null);
+            });
+        },
+        function (callback) {
+            debug('adduser saving user');
+            newuser.save(function (err) {
+                if (err)
+                    return callback(err);
+                else
+                    return callback(null);
+            });
+        }
+    ],function (err,result) {
+        if (err) {
+            if (err.errno===19){
+                //碰到SQL约束
+                if (err.message.indexOf("users.username")!==-1){
+                    //用户名重名
+                    resp.status(409).write(JSON.stringify({error:"username existed"}));
+                    debug('adduser 409');
+                    resp.end();
+                }else{
+                    debug('adduser 500');
+                    resp.status(500).end();
+                }
+            }else{
+                debug('adduser 500');
+                resp.status(500).end();
+            }
+        }else {
+            debug('adduser 200');
+            resp.status(200).end();
+        }
+    });
+}
+/*
 * 执行验证(authentication)职能
 * TODO:重写,使其只执行验证功能
 * @param {string} [token] 用户令牌
 * 如果存在用户令牌，将会转换为req.user
+* */
+/*
+* 检查是否为静态请求
+* */
+function isStatic(path) {
+    let suffix=[".html",".css",".js",".jpg"],
+        spec_url=["/"],
+        suffix_res,
+        spec_res;
+    suffix_res=suffix.find(function (e) {
+        return path.endsWith(e)
+    });
+    spec_res=spec_url.find(function (e) {
+        return path===e;
+    });
+    return suffix_res!==undefined || spec_res!==undefined;
+}
+/*
+* 验证模块
 * */
 function authentication(req, resp, next){
     var token=req.body.token;
@@ -256,8 +336,43 @@ function authentication(req, resp, next){
             }
             req.user=user;
             next();
-            //TODO:实现检查用户的权限和各个操作所需要的权限比对
         });
+    }
+}
+/*
+* 计算权限节点树
+* resource目前只有user.<id>
+* */
+function calcPermission(role,resource,action,callback) {
+    if (role==="user:0") return callback(null,true);
+    let resultcb=function (err,results) {
+        let ans=results.find(function (e) {
+            return e.value==1;
+        });
+        return callback(ans!==undefined);
+    };
+    if (role===resource) return callback(null,true);
+    if (action==="security_edit"){
+        async.parallel(async.reflectAll([
+            function (cb) {data.Authorize.getPermission(role,"users",action,cb);},
+            function (cb) {data.Authorize.getPermission(role,resource,action,cb);}
+        ]),resultcb);
+    }else if (action==="edit"){
+        async.parallel(async.reflectAll([
+            function (cb) {data.Authorize.getPermission(role,"users",action,cb);},
+            function (cb) {data.Authorize.getPermission(role,resource,action,cb);},
+            function (cb) {data.Authorize.getPermission(role,"users","security_edit",cb);},
+            function (cb) {data.Authorize.getPermission(role,resource,"security_edit",cb);}
+        ]),resultcb);
+    }else if (action==="view"){
+        async.parallel(async.reflectAll([
+            function (cb) {data.Authorize.getPermission(role,"users",action,cb);},
+            function (cb) {data.Authorize.getPermission(role,resource,action,cb);},
+            function (cb) {data.Authorize.getPermission(role,"users","security_edit",cb);},
+            function (cb) {data.Authorize.getPermission(role,resource,"security_edit",cb);},
+            function (cb) {data.Authorize.getPermission(role,"users","edit",cb);},
+            function (cb) {data.Authorize.getPermission(role,resource,"edit",cb);}
+        ]),resultcb);
     }
 }
 /*
@@ -267,157 +382,49 @@ function authorization(req,resp,next){
     async.series([
         function (callback) {
             debug('authorize: '+req.path);
-            switch (req.path){
-                case "/login":
-                case "/renew":
-                case '/listtoken': // listtoken在自己那里完成授权
-                case "/logout":
-                    return callback(null);
-                    break;
-                case "/changepassword":
-                    if (req.user===undefined || req.user===null)
-                        return callback(null,{status:401});
-                    if (req.user.getID()===req.body.userid || req.user.getID()===0)
-                        return callback(null);
-                    //TODO:检查"user.changepassword"和"user.changepassword.<user_id>节点"
-                    return callback(null,{status:403,msg:"in changepassword"});
-                    break;
-                case "/adduser":
-                    if (req.user===undefined || req.user===null)
-                        return callback(null,{status:401});
-                    if (req.user.getID()===0)
-                        return callback(null);
-                    //TODO:检查 "user.add"节点
-                    return callback(null,{status:403,msg:"in adduser"});
-                    break;
-                default:
-                    callback(null);
+            let pass=["/login"];
+            if (pass.indexOf(req.path)!=-1){
+                callback(null);
+            }else if (isStatic(req.path)){
+                callback(null);
+            } else if (_.isEmpty(req.user)){
+                callback(null,{status:401});
+            }else if (req.user.getID()===0){
+                callback(null);
+            }else if (req.path==="/listtoken" || req.path==="/changepassword"){
+                calcPermission("user."+req.user.getID(),"user."+req.body.userid,"security_edit",function (err,result) {
+                    if (err) callback(err);
+                    else callback(null,result?undefined:{status:403});
+                });
+            }else if (req.path==="/register"){
+                calcPermission("user"+req.user.getID(),"users","security_edit",function (err,result) {
+                    if (err) callback(err);
+                    else callback(null,result?undefined:{status:403});
+                });
+            }else{ //不属本模块管辖的授权，通行
+                callback(null);
             }
         }
     ],function (err,result) {
         if (result!==undefined){
             result=result[0];
         }
-        debug('authorize result: err:'+err+' result:'+result);
         if (err){
             resp.status(500).end();
+            debug('authorize 500');
             return;
         }
         if (result===undefined || result.status===undefined){
+            debug('authorize next');
             next();
+
         }else{
+            debug('authorize '+result.status);
             resp.status(result.status);
             if (result.msg!==undefined) //TODO:仔细检查result类型
                 resp.write(JSON.stringify({error:result.msg}));
             resp.end();
         }
-    });
-}
-/*
-* 添加用户
-* 权限节点
-*   -user.add
-* 表单
-* @param {string} username 用户名
-* @param {string} password 明文密码
-* @param {string} [nickname] 昵称
-* */
-function adduser(req,resp){
-    var newuser=new data.User();
-    newuser.data.username=req.body.username;
-    var plainpass=req.body.password;
-    newuser.data.nickname=req.body.nickname;
-    if (_.isEmpty(newuser.data.username) || !_.isString(newuser.data.username)|| newuser.data.username.match(/\s/) ||
-        _.isEmpty(plainpass) || !_.isString(plainpass)){
-        resp.status(400).write(JSON.stringify({error:"username or password missing"}));
-        resp.end();
-        return;
-    }
-    async.series([
-        function (callback) {
-            debug('adduser setting password');
-            newuser.setPass(plainpass,function (err) {
-                if (err)
-                    return callback(err);
-                else
-                    return callback(null);
-            });
-        },
-        function (callback) {
-            debug('adduser saving user');
-            newuser.save(function (err) {
-                if (err)
-                    return callback(err);
-                else
-                    return callback(null);
-            });
-        }
-    ],function (err,result) {
-        debug("adduser err:"+err);
-        if (err) {
-            if (err.errno===19){
-                //碰到SQL约束
-                if (err.message.indexOf("users.username")!==-1){
-                    //用户名重名
-                    resp.status(409).write(JSON.stringify({error:"username existed"}));
-                    resp.end();
-                }else{
-                    resp.status(500).end();
-                }
-            }else{
-                resp.status(500).end();
-            }
-        }else {
-            resp.status(200).end();
-        }
-    });
-}
-/*
- * @callback privilegeNodeCallback
- * @param {Object} err - 错误
- * @param {int|boolean} result - 操作结果
- * */
-/*
-* 查询节点
-* @param {int} id 用户ID
-* @param {string} priv 权限节点
-* @param {privilegeNodeCallback} callback 回调
-* */
-function querynode(id,priv,callback){
-    rdsclient.sismember(priv,id,function (err,reply) {
-        if (err) {callback(err);return;}
-        callback(null,reply===1);
-    });
-}
-/*
-* 添加权限节点
-* @param {int} id 用户ID
-* @param {string} priv 权限节点
-* @param {privilegeNodeCallback} callback 回调
-* */
-function addnode(id,priv,callback){
-    data.User.findById(id,function (err,user) {
-        if (err){callback(err);return;}
-        if (user===undefined) {callback(new Error("user not found"));return;}
-        rdsclient.sadd(priv,id,function (err,reply) {
-            if (err) callback(err);
-            //TODO:加上错误处理
-            callback(null,true);
-        });
-    });
-}
-/*
-* 删除权限节点
-* @param {int} id 用户ID
-* @param {string} 权限节点
-* @param {privilegeNodeCallback} callback 回调
-* */
-function delnode(id,priv,callback){
-    data.User.findById(id,function(err,user){
-        if (err) {callback(err);return;}
-        if (user===undefined) {callback(new Error("user not found"));return;}
-        rdsclient.del(priv);
-        callback(null,1);
     });
 }
 router.use(authentication); //做token验证
@@ -426,9 +433,6 @@ router.post('/login',login);
 router.post('/renew',login);
 router.post('/logout',logout);
 router.post('/changepassword',changepassword);
-router.post('/adduser',adduser);
+router.post('/register',adduser);
 router.post('/listtoken',listToken);
 module.exports=router;
-exports.querynode=querynode;
-exports.addnode=addnode;
-exports.delnode=delnode;
