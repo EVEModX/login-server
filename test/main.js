@@ -187,6 +187,7 @@ describe('main.js',function () {
         var users=[{username:"pibc",password:"pibc"},{username:"tga",password:"tga"},{username:"fbp",password:"fbp"}];
         var db=new sqlite3.Database(__dirname+"/../test.sqlite3");
         before('clear all accounts and privileges',function (done) {
+            this.timeout(5000);
             async.series([
                 function (cb) {
                 console.log("1");

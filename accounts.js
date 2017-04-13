@@ -170,7 +170,6 @@ function requesttoken(req,resp){
 *   :param give_to 被授予的用户ID
 *   :param priv 授予的权限("gettoken":登录 "give":授予他人)
 * */
-//TODO:撤销权限
 function giveaccess(req,resp){
 	var aid=req.body.account_id,
 		given=req.body.give_to,
@@ -187,6 +186,12 @@ function giveaccess(req,resp){
         });
 	});
 }
+/*
+* 撤销权限
+* */
+function revokeaccess(req, resp) {
+    
+}
 function get_accounts(req, resp) {
 	var user=req.user;
 	rdsclient.smember("user."+user.getID()+".accounts",function (err,reply) {
@@ -195,7 +200,8 @@ function get_accounts(req, resp) {
     });
 }
 function calcPermission(role,resource,action,callback) {
-    
+    if (role==="user:0") return callback(null,true);
+
 }
 function authorization(req, resp, next){
 	debug('authorize: '+req.path);
@@ -210,18 +216,44 @@ function authorization(req, resp, next){
 	            cb(null,{status:403});
             }else if (req.path==="/add"){
                 cb(null);
-            }else if (req.path==="/edit"){
+            }else if (req.path==="/edit" || req.path==="/delete"){
                 calcPermission("user."+req.user.getID(),"account."+aid.toString(),"edit",function (err,result) {
                     if (err) return cb(err);
-                    else callback(null,result?undefined:{status:403});
+                    else cb(null,result?undefined:{status:403});
                 });
             }else if (req.path==='/get_accounts'){
                 calcPermission("user."+req.user.getID(),"user."+aid.toString(),"view",function (err,result) {
-                    
+                    if (err) return cb(err);
+                    else cb(null,result?undefined:{status:403});
                 });
+            }else if (req.path==="/give"){
+                calcPermission("user."+req.user.getID(),"account."+aid.toString(),"give",function (err,result) {
+                    if (err) return cb(err);
+                    else cb(null,result?undefined:{status:403});
+                })
+            }else if (req.path==="/login"){
+                calcPermission("user."+req.user.getID(),"account."+aid.toString(),"getToken",function (err,result) {
+                    if (err) return cb(err);
+                    else cb(null,result?undefined:{status:403});
+                })
             }
         }
 	],function (err,result) {
+		"use strict";
+		if (err) {debug('authorize 500');resp.status(500).end();return;}
+		if (result!==undefined){
+		    result=result[0];
+        }
+        if (result===undefined || result.status===undefined){
+		    debug('authorize next');
+		    next();
+        }else{
+            debug('authorize '+result.status);
+            resp.status(result.status);
+            if (result.msg!==undefined)
+                resp.write(JSON.stringify({error:result.msg}));
+            resp.end();
+        }
     });
 }
 router.use(authorization);
@@ -230,5 +262,6 @@ router.post('/edit',editaccount);
 router.post('/get_accounts',get_accounts);
 router.post('/delete',editaccount);
 router.post('/login',requesttoken);
+router.post('/revoke',revokeaccess);
 router.post('/give',giveaccess);
 module.exports=router;
