@@ -266,21 +266,22 @@ exports.Authorize={
     * */
     setPermission:function (role,resource,action,callback) {
         "use strict";
+        let perm=true;
         if (_.isEmpty(role) || _.isEmpty(resource) || _.isEmpty(action))
             return callback(new Error("args cannot be empty"));
         db.run("INSERT INTO "+this.TABLE_NAME+" (role,resource,action,perm)" +
-            " VALUES(?,?,?) ON DUPLICATE KEY UPDATE",[role,resource,action],function (err,result) {
+            " VALUES(?,?,?,?) ON DUPLICATE KEY UPDATE",[role,resource,action,perm],function (err,result) {
             if (err) return callback(err);
             else callback(null);
         });
     },
-    /*删除权限记录*/
+    /*删除权限记录 (单点)*/
     delPermission:function (role,resource,action,callback) {
         "use strict";
         if (_.isEmpty(role) || _.isEmpty(resource) || _.isEmpty(action))
             return callback(new Error("args cannot be empty"));
         db.run("DELETE FROM "+this.TABLE_NAME+
-            " WHERE role=? AND resource=? AND action=?",[role,resource,action], function (err,result) {
+            " WHERE role LIKE ? AND resource LIKE ? AND action LIKE ?",[role,resource,action], function (err,result) {
             if (err) return callback(err);
             else return callback(null);
         });

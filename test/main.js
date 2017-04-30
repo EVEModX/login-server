@@ -5,6 +5,7 @@
 var app=require('../app');
 var request=require('supertest')('http://localhost:8080');
 var should=require('should');
+var debug=require('debug')('test');
 var sqlite3=require('sqlite3');
 var redis=require('redis'),
     rdsclient=redis.createClient();
@@ -190,7 +191,6 @@ describe('main.js',function () {
             this.timeout(5000);
             async.series([
                 function (cb) {
-                console.log("1");
                     db.run("DELETE FROM tokens",function (err) {
                         if (err) cb(err);
                         db.run("DELETE FROM users WHERE NOT username=\'root\'",function (err) {
@@ -200,11 +200,9 @@ describe('main.js',function () {
                     })
                 },
                 function (cb) {
-                    console.log("2");
                     rdsclient.flushall(cb);
                 },
                 function (cb) {
-                    console.log("3");
                     request.post('/login').send({username:"root",password:"root"})
                         .expect(function (res) {
                             res=JSON.parse(res.text);
@@ -212,14 +210,12 @@ describe('main.js',function () {
                         }).expect(200,cb);
                 },
                 function (cb) {
-                    console.log("4");
                     async.each(users,function (user,cb2) {
                         request.post('/register').send(Object.assign({token:roottoken},user))
                             .expect(200,cb2);
                     },cb);
                 },
                 function (cb) {
-                    console.log("5");
                     async.each(users,function (user,cb2) {
                         request.post('/login').send(user)
                             .expect(function (res) {
@@ -229,47 +225,13 @@ describe('main.js',function () {
                     },cb);
                 }
             ],function (err) {
-                console.log("6");
                 if (err) throw err;
+                debug('cleared all accounts and ready for test');
                 done();
             });
-/*
-                db.run("DELETE FROM tokens",function (err) {
-                    if (err) throw err;
-                    db.run("DELETE FROM users WHERE NOT username=\'root\'",function (err) {
-                        if (err) throw err;
-                        db.close(function (err) {
-                            if (err) throw err;
-                            rdsclient.flushall(function (err) {
-                                if (err) throw err;
-                                request.post('/login').send({username:"root",password:"root"})
-                                    .expect(function (res) {
-                                        res=JSON.parse(res.text);
-                                        roottoken=res.token;
-                                    }).expect(200,function(err){
-                                        "use strict";
-                                        if (err) throw err;
-                                        async.each(users,function (user,cb2) {
-                                            request.post('/register').send(Object.assign({token: roottoken}, user))
-                                                .expect(200, cb2);
-                                        },function(err){
-                                            if (err) throw err;
-                                            async.each(users,function (user,cb2) {
-                                                request.post('/login').send(user)
-                                                    .expect(function (res) {
-                                                        res=JSON.parse(res.text);
-                                                        tokens.push(res.token);
-                                                    }).expect(200,cb2);
-                                            },done);
-                                        });
-                                    });
-                            });
-                        });
-                    });
-                });*/
         });
         it('should add eve account',function (done) {
-            request.post('/accounts/add').send({token:tokens[0],account:"{username:test,password:test}"})
+            request.post('/accounts/add').send({token:tokens[0],account:JSON.stringify({username:"test",password:"test"})})
                 .expect(200,done);
         });
         it('should get eve account');

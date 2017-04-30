@@ -417,7 +417,6 @@ function authorization(req,resp,next){
         if (result===undefined || result.status===undefined){
             debug('authorize next');
             next();
-
         }else{
             debug('authorize '+result.status);
             resp.status(result.status);

@@ -11,7 +11,8 @@
 * 每个用户都有一个私钥对，存放在服务器上，私钥用客户密码hash加密
 * A用户授权B用户使用账号X时，用A的密码解锁私钥，私钥解锁账户密码，然后用B的公钥加密存入
 * */
-var debug=require('supertest')('accounts');
+"use strict";
+var debug=require('debug')('accounts');
 var express=require('express');
 var auth=require('./authentication');
 var _=require('lodash');
@@ -21,8 +22,8 @@ var redis=require('redis'),
 	rdsclient=redis.createClient();
 var async=require('async');
 var router=express.Router();
-var db=new sqlite3.Database(__dirname+"/accounts.sqlite3").once('error',function (err) {
-    console.error('error on opening '+__dirname+"/accounts.sqlite3");
+var db=new sqlite3.Database(__dirname+"/test.sqlite3").once('error',function (err) {
+    console.error('error on opening '+__dirname+"/test.sqlite3");
 });
 /*
 * 权限系统：(accounts.*)
@@ -34,8 +35,19 @@ var db=new sqlite3.Database(__dirname+"/accounts.sqlite3").once('error',function
 *       +-accounts.getToken
 *   - account.<account_id>.edit 仅由所有者拥有，包括删除
 * */
-
-
+/*
+* 目前还是采用sql表存储
+* */
+const TABLE_NAME="eve_accounts";
+const PRIV_TABLE_NAME="privileges";
+const SQL_CREATE_TABLE=
+    "CREATE TABLE eve_accounts ("+
+    "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,"+
+    "owner INTEGER NOT NULL,"+
+    "username TEXT,"+
+    "password TEXT,"+
+    "CONSTRAINT one_account UNIQUE(username,password,owner),"+
+    ");";
 /*
 * 添加账号密码
 * 授权验证:
@@ -44,106 +56,81 @@ var db=new sqlite3.Database(__dirname+"/accounts.sqlite3").once('error',function
 *   :param token 用户token
 *   :param account json编码的EVE账号信息 {username:<username>,password:<password>}
 *   :param [account_owner=(token所指定的用户)] EVE账号所属ID
+* 返回
+*    成功返回200+账号ID
 * */
-//TODO:数据一致性
 function addaccount(req,resp){
-    var eveacc=req.body.account,
-        owner=req.body.account_owner;
-    if (eveacc===undefined || owner===undefined){
+    let eveacc=req.body.account,
+        owner=req.body.account_owner,
+        stopExec=false;
+    debug('adding account:'+eveacc);
+    try{
+        eveacc=JSON.parse(eveacc);
+    }catch(err){
+        if (typeof err===SyntaxError){
+            resp.status(400).end();
+            stopExec=true;
+        }
+    }
+    if (stopExec) return;
+    debug('account parsed'+eveacc);
+    if (_.isEmpty(eveacc)){
+        debug('account is empty');
         resp.status(400).write(JSON.stringify({error:"missing arguments"}));
         resp.end();
         return;
     }
-	var newaccount={};
-	newaccount.username=eveacc.username;
-	newaccount.password=eveacc.password;
-	newaccount.owner=req.body.account_owner || req.user.getID();
-	rdsclient.get("account_cnt",function(err,reply){
-		if (err){
-			resp.status(500).write().end();
-			//TODO:日志
-			return;
-		}
-		if (reply===null) {
-			rdsclient.set("account_cnt",1);
-			reply=1;
-		}
-		rdsclient.incr("account_cnt");
-		newaccount.id=reply;
-	});
-	var multi=rdsclient.multi();
-	multi.set(newaccount.id,JSON.stringify(newaccount));
-	multi.sadd("user."+user.getID()+".accounts",newaccount.id);
-	multi.exec(function (err,result) {
-		if (err) {resp.status(500).end();return;}
-        auth.addnode("accounts.edit."+newaccount.id.toString(),user.getID(),function (err,result) {
-            if (err){resp.status(500).write(JSON.stringify({error:"Internal Server Error"}));return;}
-            resp.status(200);
-            resp.write(JSON.stringify({accountid:newaccount.id}));
-            resp.end();
+	let args=[req.body.account_owner || req.user.getID(),eveacc.username, eveacc.password];
+	db.run("INSERT INTO "+TABLE_NAME+" (owner,username,password) VALUES (?,?,?)", args,function (err) {
+            if (err) {resp.status(500).end();debug(err);return;}
+            //TODO:处理UNIQUE冲突
+            debug('account set, returning id');
+            db.get("SELECT id FROM "+TABLE_NAME+" WHERE owner=? AND username=? AND password=?",args,function (err,row) {
+                debug(row);
+                if (err){resp.status(500).end();return;}
+                resp.status(200).write(JSON.stringify({id:row.id}));
+                resp.end();
+            });
         });
-    });
 }
 /*
-* 修改/删除账号密码
+* 修改账号
 * 授权:
 *   - accounts.edit.<account_id>
 * 表单:
 *   :param account_id EVE账号的ID
-*   :param action 操作 1:删除 2:修改
 *	:param account 修改后的EVE账号
 * */
-var DELETE_ACCOUNT=1,EDIT_ACCOUNT=2;
 function editaccount(req,resp){
-	var aid=req.body.account_id,
-		action=req.body.action,
+	let aid=req.body.account_id,
 		eveacc=req.body.account;
-	var multi=rdsclient.multi();
-	switch(action){
-		case DELETE_ACCOUNT:
-			async.series([
-				function (callback) {
-                    multi.del("accounts.edit."+aid.toString());
-                    multi.del("accounts.give."+aid.toString());
-                    multi.del("accounts.getToken."+aid.toString());
-                    multi.del(aid);
-                    callback();
-                },
-				function (callback) {
-                    rdsclient.keys("user.*.accounts",function (err,replies) {
-                        if (err) return callback(err);
-                        replies.forEach(function (reply) {
-                            multi.srem(reply,aid);
-                        });
-                    });
-                    callback();
-                },
-				function (callback) {
-					multi.exec(function (err,replies) {
-						if (err) return callback(err);
-						return callback();
-                    })
-                }
-			],function (err,result) {
-                if (err) {resp.status(500).end();return;}
-                resp.status(200).end();
-			});
-			break;
-		case EDIT_ACCOUNT:
-			var newaccount={};
-			newaccount.username=eveacc.username;
-			newaccount.password=eveacc.password;
-			newaccount.owner=req.user.getID();
-			newaccount.id=aid;
-			multi.set(aid,newaccount); //TODO:如何处理删除和修改
-			multi.exec(function (err,reply) {
-				if (err) {resp.status(500).end();return;}
-				resp.status(200).end();
-            });
-			break;
-		default:
-			resp.status(400).end();
-	}
+    if (_.isEmpty(aid) || _.isEmpty(eveacc)){
+        resp.status(400).end();
+        return;
+    }
+    db.run("UPDATE ? SET username=?,password=? WHERE id=?",[TABLE_NAME,eveacc.username,eveacc.password,aid],function (err){
+        if (err) {resp.status(500).end();return;}
+        resp.status(200).end();
+    });
+}
+/*
+* 删除账号
+* 表单:
+*   :param account_id EVE账号的ID
+* */
+function deleteaccount(req,resp) {
+    let aid=req.body.account_id;
+    if (!_.isNumber(aid)){
+        resp.status(400).end();
+        return;
+    }
+    db.run("DELETE * FROM ? WHERE id=?",[TABLE_NAME,aid],function (err) {
+        if (err) {resp.status(500).end();return;}
+        ds.Authorize.delPermission("%","account:"+aid.toString(),"%",function (err) {
+            if (err) {resp.status(500).end();return;}
+            resp.status(200).end();
+        });
+    });
 }
 /*
 * 向天成服务器请求EVE登录token
@@ -167,36 +154,93 @@ function requesttoken(req,resp){
 * 授权:
 *   - accounts.give.<account_id>
 * 表单:
+*   :param account_id 账户ID
 *   :param give_to 被授予的用户ID
 *   :param priv 授予的权限("gettoken":登录 "give":授予他人)
 * */
 function giveaccess(req,resp){
-	var aid=req.body.account_id,
+	let aid=req.body.account_id,
 		given=req.body.give_to,
 		priv=req.body.priv;
-	ds.User.findById(given,function (err,user) {
-		if (err) {resp.status(500).end();return;}
-		if (!user){
-			resp.status(404).write(JSON.stringify({error:"user not found"})).end();
-			return;
-		}
-		auth.addnode(user.getID(),"accounts."+priv+"."+aid,function (err,result) {
-			if (err || !result){resp.status(500).end();return;}
-			resp.status(200).end();
+	if (!_.isNumber(aid) || !_.isNumber(given) || (priv!=="gettoken" && priv!=="give")){
+        resp.status(400).end();
+        return;
+    }
+    ds.User.findById(given,function (err,user) {
+        if (err) {resp.status(500).end();return;}
+        if (user===undefined){
+            resp.status(404).end();
+            return;
+        }
+        ds.Authorize.setPermission("user."+given,"account."+aid,priv,function (err) {
+            if (err) {resp.status(500).end();return;}
+            resp.status(200).end();
         });
-	});
+    });
 }
 /*
 * 撤销权限
+* 表单:
+*   :param account_id 账户ID
+*   :param revoke_from 被撤销的用户ID
 * */
 function revokeaccess(req, resp) {
-    
+    let aid=req.body.account_id,
+        revoke=req.body.revoke_from;
+    if (!_.isNumber(aid) || !_.isNumber(revoke)){
+        resp.status(400).end();
+        return;
+    }
+    ds.User.findById(revoke,function (err,user) {
+        if (err) {resp.status(500).end();return;}
+        if (user===undefined){
+            resp.status(404).end();
+            return;
+        }
+        ds.Authorize.delPermission("user."+revoke,"account."+aid,"%",function (err) {
+            if (err) {resp.status(500).end();return;}
+            resp.status(200).end();
+        });
+    });
 }
+/*
+* 获取某用户所有有权限的账户列表
+* TODO：以后塞到存储过程去做
+* 表单:
+*   :param userid 用户ID
+* */
 function get_accounts(req, resp) {
-	var user=req.user;
-	rdsclient.smember("user."+user.getID()+".accounts",function (err,reply) {
-		if (err) {resp.status(500).end();return;}
-		resp.status(200).write(JSON.stringify(reply)).end();
+    let uid=req.body.userid;
+    if (!_.isNumber(uid)){
+        resp.status(400).end();
+        return;
+    }
+    async.parallel([
+        function (cb) {
+            db.all("SELECT resource FROM ? WHERE role=?",[PRIV_TABLE_NAME,"user:"+uid.toString()],function (err,rows) {
+                if (err) return cb(err);
+                if (_.isEmpty(rows)) return cb(null,rows);
+                return cb(null,rows.map(function (x) {
+                    let t=x.resource.split('.');
+                    return t.length===1?null:Number(t[1]);
+                }));
+            });
+        },
+        function (cb) {
+            db.all("SELECT id FROM ? WHERE owner=?",[TABLE_NAME,uid],function (err,rows) {
+                if (err) return cb(err);
+                if (_.isEmpty(rows)) return cb(null,rows);
+                return cb(null,rows.map(x => Number(x.id)));
+            })
+        }
+    ],function (err,result) {
+        if (err){resp.status(500).end();}
+        let rt=new Set();
+        for (let i=0,len=result.length;i<len;i++){
+            rt.add(result[i]);
+        }
+        resp.status(200);
+        resp.write(JSON.stringify([...rt]));
     });
 }
 function calcPermission(role,resource,action,callback) {
@@ -209,20 +253,19 @@ function authorization(req, resp, next){
 		aid=req.body.account_id;
 	async.series([
 		function (cb) {
-	        if (_.isEmpty(aid)){
-	            cb(null,{status:400,msg:"missing account id"});
-            }
 	        if (_.isEmpty(user)){
 	            cb(null,{status:403});
             }else if (req.path==="/add"){
                 cb(null);
-            }else if (req.path==="/edit" || req.path==="/delete"){
-                calcPermission("user."+req.user.getID(),"account."+aid.toString(),"edit",function (err,result) {
+            }else if (req.path==='/get_accounts'){
+                calcPermission("user."+req.user.getID(),"user."+aid.toString(),"view",function (err,result) {
                     if (err) return cb(err);
                     else cb(null,result?undefined:{status:403});
                 });
-            }else if (req.path==='/get_accounts'){
-                calcPermission("user."+req.user.getID(),"user."+aid.toString(),"view",function (err,result) {
+            }else if (_.isEmpty(aid)){
+                cb(null,{status:400,msg:"missing account id"});
+            }else if (req.path==="/edit" || req.path==="/delete"){
+                calcPermission("user."+req.user.getID(),"account."+aid.toString(),"edit",function (err,result) {
                     if (err) return cb(err);
                     else cb(null,result?undefined:{status:403});
                 });
@@ -260,7 +303,7 @@ router.use(authorization);
 router.post('/add',addaccount);
 router.post('/edit',editaccount);
 router.post('/get_accounts',get_accounts);
-router.post('/delete',editaccount);
+router.post('/delete',deleteaccount);
 router.post('/login',requesttoken);
 router.post('/revoke',revokeaccess);
 router.post('/give',giveaccess);
