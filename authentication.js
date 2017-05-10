@@ -4,19 +4,14 @@
  * @author hanyuwei70 hanyuwei70@qq.com
  * */
 "use strict";
-var _=require('lodash');
-var express=require('express');
-var crypto=require('crypto');
-var data=require('./datasource');
-var config = require("./config.js");
-var debug=require('debug')('authentication');
-var async=require('async');
-var redis=require('redis'),
-    rdsclient=redis.createClient();
-rdsclient.on("error",function (err) {
-    console.log("REDIS CLIENT ERROR:"+err);
-});
-var router=express.Router();
+const _=require('lodash');
+const express=require('express');
+const crypto=require('crypto');
+const data=require('./datasource');
+const config = require("./config.js");
+const debug=require('debug')('authentication');
+const async = require('async');
+let router = express.Router();
 /*
 * 用户管理权限系统
 * * root (UID=0) 最高权限
@@ -275,7 +270,7 @@ function adduser(req,resp){
                     resp.status(500).end();
                 }
             }else{
-                debug('adduser 500');
+                debug('adduser 500 err:'+err);
                 resp.status(500).end();
             }
         }else {
@@ -344,7 +339,7 @@ function authentication(req, resp, next){
 * resource目前只有user.<id>
 * */
 function calcPermission(role,resource,action,callback) {
-    if (role==="user:0") return callback(null,true);
+    if (role==="user.0") return callback(null,true);
     let resultcb=function (err,results) {
         let ans=results.find(function (e) {
             return e.value==1;

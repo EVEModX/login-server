@@ -1,13 +1,13 @@
 /*
 * 抽象数据接口,sqlite3版本
 * */
-var sqlite3=require("sqlite3").verbose();
-var _=require('lodash');
-var debug=require("debug")('datasource');
-var crypto=require("crypto");
-var config=require("./config");
-var async=require("async");
-var db=new sqlite3.Database(__dirname+"/test.sqlite3");
+const sqlite3=require("sqlite3").verbose();
+const _=require('lodash');
+const debug=require("debug")('datasource');
+const crypto=require("crypto");
+const config=require("./config");
+const async=require("async");
+let db=new sqlite3.Database(__dirname+"/test.sqlite3");
 db.on('trace',function (stmt) {
     require('debug')('sqlite3')(stmt);
 });
@@ -180,14 +180,19 @@ User.prototype.getID=function(){
 * save 将用户数据写回数据库
 * */
 User.prototype.save=function(callback){ //把用户数据写回数据库
-    var that=this;
-    var db_=new sqlite3.Database(__dirname+"/test.sqlite3");
+    let that=this;
+    let db_=new sqlite3.Database(__dirname+"/test.sqlite3");
     db_.on('trace',function (stmt) {
         require('debug')('sqlite3')(stmt);
     });
     async.series([
         function (callback) {
-            db_.run("BEGIN IMMEDIATE TRANSACTION",function (err) {
+            db_.run("PRAGMA journal_mode = WAL;");
+            db_.configure('busyTimeout',100000);
+            callback();
+        },
+        function (callback) {
+            db_.run("BEGIN TRANSACTION",function (err) {
                 if (err) callback(err);
                 else callback();
             });
@@ -254,7 +259,7 @@ exports.Authorize={
     * resource varchar 资源
     * action varchar 动作
     * perm boolean 是否允许 目前阶段此字段保持为1(允许)
-    * CONSTRAINT permission UNIQUE (role,resource,action)
+    * CONSTRAINT permission UNIQUE (role,resource,action) ON CONFLICT REPLACE
     * */
     TABLE_NAME:"privileges",
     /*
@@ -263,6 +268,7 @@ exports.Authorize={
     * @param resource string 资源
     * @param action string 动作
     * @callback err:错误
+    *
     * */
     setPermission:function (role,resource,action,callback) {
         "use strict";
@@ -270,7 +276,7 @@ exports.Authorize={
         if (_.isEmpty(role) || _.isEmpty(resource) || _.isEmpty(action))
             return callback(new Error("args cannot be empty"));
         db.run("INSERT INTO "+this.TABLE_NAME+" (role,resource,action,perm)" +
-            " VALUES(?,?,?,?) ON DUPLICATE KEY UPDATE",[role,resource,action,perm],function (err,result) {
+            " VALUES(?,?,?,?)",[role,resource,action,perm],function (err,result) {
             if (err) return callback(err);
             else callback(null);
         });

@@ -12,18 +12,19 @@
 * A用户授权B用户使用账号X时，用A的密码解锁私钥，私钥解锁账户密码，然后用B的公钥加密存入
 * */
 "use strict";
-var debug=require('debug')('accounts');
-var express=require('express');
-var auth=require('./authentication');
-var _=require('lodash');
-var sqlite3=require('sqlite3');
-var ds=require('./datasource');
-var redis=require('redis'),
-	rdsclient=redis.createClient();
-var async=require('async');
-var router=express.Router();
-var db=new sqlite3.Database(__dirname+"/test.sqlite3").once('error',function (err) {
+const debug=require('debug')('accounts');
+const express=require('express');
+const auth=require('./authentication');
+const _=require('lodash');
+const sqlite3=require('sqlite3').verbose();
+const ds=require('./datasource');
+const async=require('async');
+let router=express.Router();
+let db=new sqlite3.Database(__dirname+"/test.sqlite3").once('error',function (err) {
     console.error('error on opening '+__dirname+"/test.sqlite3");
+});
+db.on('trace',function (sql) {
+    debug('SQL RUNNING:'+sql);
 });
 /*
 * 权限系统：(accounts.*)
@@ -102,14 +103,26 @@ function addaccount(req,resp){
 *	:param account 修改后的EVE账号
 * */
 function editaccount(req,resp){
+    debug('editing account');
 	let aid=req.body.account_id,
-		eveacc=req.body.account;
-    if (_.isEmpty(aid) || _.isEmpty(eveacc)){
+		eveacc=req.body.account,
+        StopExec=false;
+    if (!_.isNumber(aid) || !_.isFinite(aid) || !_.isString(eveacc)){
         resp.status(400).end();
         return;
     }
-    db.run("UPDATE ? SET username=?,password=? WHERE id=?",[TABLE_NAME,eveacc.username,eveacc.password,aid],function (err){
-        if (err) {resp.status(500).end();return;}
+    try{
+        eveacc=JSON.parse(eveacc);
+    }catch(err){
+        if (typeof err===SyntaxError){
+            resp.status(400).write(JSON.stringify({error:"account format error"}));
+            StopExec=true;
+        }
+    }
+    debug('commit to database');
+    if (StopExec) return;
+    db.run("UPDATE "+TABLE_NAME+" SET username=?,password=? WHERE id=?",[eveacc.username,eveacc.password,aid],function (err){
+        if (err) {resp.status(500).end();debug(err);return;}
         resp.status(200).end();
     });
 }
@@ -142,12 +155,26 @@ function deleteaccount(req,resp) {
 * */
 //TODO:实现
 function requesttoken(req,resp){
-	var aid=req.body.account_id;
-	var uri="https://auth.eve-online.com.cn/oauth/authorize?client_id=eveclient&scope=eveClientLogin&response_type=token&redirect_uri=https%3A%2F%2Fauth.eve-online.com.cn%2Flauncher%3Fclient_id%3Deveclient&lang=zh&mac=None"
-	rdsclient.get(aid,function (err,reply) {
-		if (err) {resp.status(500).end();return;}
-		resp.status(200).write(reply).end();
-    })
+	const aid=req.body.account_id;
+	debug('requesting token of '+aid);
+	if (!_.isNumber(aid) || !_.isFinite(aid)){
+	    resp.status(400).end();
+	    return;
+    }
+	const uri="https://auth.eve-online.com.cn/oauth/authorize?client_id=eveclient&scope=eveClientLogin&response_type=token&redirect_uri=https%3A%2F%2Fauth.eve-online.com.cn%2Flauncher%3Fclient_id%3Deveclient&lang=zh&mac=None";
+	db.get("SELECT * FROM "+TABLE_NAME+" WHERE id=?",aid,function (err,reply) {
+		if (err) {resp.status(500).end();debug('requesttoken err:'+JSON.stringify(err));return;}
+		if (reply===undefined){
+		    resp.status(404);
+		    resp.end();
+		    return;
+        }
+        reply.id=undefined;
+		reply.owner=undefined;
+		resp.status(200);
+		resp.json(reply);
+		resp.end();
+    });
 }
 /*
 * 用户授权其他人使用EVE账号
@@ -162,7 +189,8 @@ function giveaccess(req,resp){
 	let aid=req.body.account_id,
 		given=req.body.give_to,
 		priv=req.body.priv;
-	if (!_.isNumber(aid) || !_.isNumber(given) || (priv!=="gettoken" && priv!=="give")){
+	debug('giving '+priv+' to uid:'+given+' on aid:'+aid);
+	if (!_.isNumber(aid) || !_.isNumber(given) || (priv!=="getToken" && priv!=="give")){
         resp.status(400).end();
         return;
     }
@@ -208,6 +236,8 @@ function revokeaccess(req, resp) {
 * TODO：以后塞到存储过程去做
 * 表单:
 *   :param userid 用户ID
+* 权限:
+*   - users.view
 * */
 function get_accounts(req, resp) {
     let uid=req.body.userid;
@@ -243,9 +273,84 @@ function get_accounts(req, resp) {
         resp.write(JSON.stringify([...rt]));
     });
 }
+/*
+* 计算本模块所需要的权限
+* @param role string 角色
+* @param resource string 资源
+* @param action string 动作
+* @callback err:错误 result:授权结果 true/false
+* */
 function calcPermission(role,resource,action,callback) {
-    if (role==="user:0") return callback(null,true);
-
+    debug("calcPerm: role->"+role+" resource->"+resource+" action->"+action);
+    if (role==="user.0") return callback(null,true);
+    let resultcb=function (err,results) {
+        let ans=results.find(function (e) {
+            return e.value==1;
+        });
+        return callback(null,ans!==undefined);
+    };
+    let defaultpriv=new Promise(function (resolve,reject) {
+        let aid=Number(resource.split('.')[1]),
+            uid=Number(role.split('.')[1]);
+        if (isNaN(aid) || isNaN(uid)){
+            reject({code:400});
+            return;
+        }
+        //debug("priv's uid:"+uid+" aid:"+aid);
+        db.get("SELECT * FROM "+TABLE_NAME+" WHERE id= ? AND owner= ?",[aid,uid],function (err,result) {
+            if (err){debug("default priv's err"+err);reject({code:500});return;}
+            //debug("default priv's result:"+JSON.stringify(result));
+            if (result!==undefined) resolve();
+            else reject({code:403});
+        });
+    });
+    defaultpriv.then(function () {
+        callback(null,true);
+    }).catch(function (rejectmsg) {
+        if (rejectmsg.code===500){
+            callback(new Error("Error in calcPermission"));
+            return;
+        }
+        switch (action){
+            case "edit":
+                async.parallel(async.reflectAll([
+                    function (cb) {ds.Authorize.getPermission(role,resource,"edit",cb);},
+                    function (cb) {ds.Authorize.getPermission(role,"accounts","edit",cb);}
+                ]),resultcb);
+                break;
+            case "give":
+                async.parallel(async.reflectAll([
+                    function (cb) {ds.Authorize.getPermission(role,resource,"edit",cb);},
+                    function (cb) {ds.Authorize.getPermission(role,resource,"give",cb);},
+                    function (cb) {ds.Authorize.getPermission(role,"accounts","give",cb);},
+                    function (cb) {ds.Authorize.getPermission(role,"accounts","edit",cb);}
+                ]),resultcb);
+                break;
+            case "getToken":
+                async.parallel(async.reflectAll([
+                    function (cb) {ds.Authorize.getPermission(role,resource,"edit",cb);},
+                    function (cb) {ds.Authorize.getPermission(role,resource,"give",cb);},
+                    function (cb) {ds.Authorize.getPermission(role,resource,"getToken",cb);},
+                    function (cb) {ds.Authorize.getPermission(role,"accounts","getToken",cb);},
+                    function (cb) {ds.Authorize.getPermission(role,"accounts","give",cb);},
+                    function (cb) {ds.Authorize.getPermission(role,"accounts","edit",cb);}
+                ]),resultcb);
+                break;
+            case "add":
+                callback(null,true);
+                break;
+            case "view":
+                async.parallel(async.reflectAll([
+                    function (cb) {ds.Authorize.getPermission(role,resource,"security_edit",cb);},
+                    function (cb) {ds.Authorize.getPermission(role,resource,"edit",cb);},
+                    function (cb) {ds.Authorize.getPermission(role,"users","security_edit",cb);},
+                    function (cb) {ds.Authorize.getPermission(role,"users","edit",cb);}
+                ]),resultcb);
+                break;
+            default:
+                callback(null,false);
+        }
+    });
 }
 function authorization(req, resp, next){
 	debug('authorize: '+req.path);
@@ -262,7 +367,7 @@ function authorization(req, resp, next){
                     if (err) return cb(err);
                     else cb(null,result?undefined:{status:403});
                 });
-            }else if (_.isEmpty(aid)){
+            }else if (!_.isNumber(aid) && _.isFinite(aid)){
                 cb(null,{status:400,msg:"missing account id"});
             }else if (req.path==="/edit" || req.path==="/delete"){
                 calcPermission("user."+req.user.getID(),"account."+aid.toString(),"edit",function (err,result) {
@@ -283,7 +388,7 @@ function authorization(req, resp, next){
         }
 	],function (err,result) {
 		"use strict";
-		if (err) {debug('authorize 500');resp.status(500).end();return;}
+		if (err) {debug('authorize 500 err:'+err);resp.status(500).end();return;}
 		if (result!==undefined){
 		    result=result[0];
         }
@@ -291,7 +396,7 @@ function authorization(req, resp, next){
 		    debug('authorize next');
 		    next();
         }else{
-            debug('authorize '+result.status);
+            debug('authorize '+result.status+' msg:'+(result.msg===undefined?"N/A":result.msg));
             resp.status(result.status);
             if (result.msg!==undefined)
                 resp.write(JSON.stringify({error:result.msg}));
