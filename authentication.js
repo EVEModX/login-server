@@ -30,7 +30,7 @@ let router = express.Router();
 * @param {string} password 密码
 * */
 function login(req,resp){
-    var username=req.body.username,
+    let username=req.body.username,
         password=req.body.password,
         token=req.body.token;
     if (req.url==="/login"){ //登录
@@ -50,7 +50,7 @@ function login(req,resp){
             if (user!==undefined && user.checkPass(password)) {
                 crypto.randomBytes(8,function(err,buf){ //64bit token 应该足够 //TODO:重写
                     if (err){
-                        debug('login 500')
+                        debug('login 500');
                         resp.status(500).end();
                         return;
                     }
@@ -411,6 +411,7 @@ function authorization(req,resp,next){
         }
         if (result===undefined || result.status===undefined){
             debug('authorize next');
+            req.brute.reset();
             next();
         }else{
             debug('authorize '+result.status);

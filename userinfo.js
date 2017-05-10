@@ -12,7 +12,7 @@ var router=express.Router();
 * 获取用户信息
 * */
 function getUserinfo(req,resp){
-    var requsername=req.body.username_req;
+    let requsername=req.body.username_req;
     data.User.findByName(requsername,function (err,user) {
         if (err){
             resp.status(500);
@@ -24,7 +24,7 @@ function getUserinfo(req,resp){
             resp.end();
             return;
         }
-        var userinfo={};
+        let userinfo={};
         userinfo.username=user.data.username;
         userinfo.nickname=user.data.nickname;
         userinfo.userid=user.data.userid;
@@ -33,7 +33,7 @@ function getUserinfo(req,resp){
     });
 }
 function setUserinfo(req,resp){
-    var requsername=req.body.username_req,
+    let requsername=req.body.username_req,
         newinfo=req.body.newinfo;
     data.User.findByName(requsername,function (err,user){
         if (err){

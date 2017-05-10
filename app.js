@@ -1,14 +1,29 @@
 /* Use UTF-8 to operate this file*/
-var express=require('express');
-var bodyParser=require('body-parser');
-var auth=require('./authentication');
-var userinfo=require("./userinfo");
-var cfg=require('./config');
-var accounts=require('./accounts');
-var app=express();
+const express=require('express');
+const bodyParser=require('body-parser');
+const auth=require('./authentication');
+const userinfo=require("./userinfo");
+const cfg=require('./config');
+const accounts=require('./accounts');
+const ExpBrute=require('express-brute');
+let app=express();
 
 app.use(bodyParser.json()); //支持 JSON 主体
 app.use(bodyParser.urlencoded({extended:true})); // 支持 URL 编码主体
+
+let store=new ExpBrute.MemoryStore();
+let expbrute=new ExpBrute(store,{
+    freeRetries:20,
+    minWait:2000,
+    lifetime:3600,
+    failCallback:ExpBrute.FailForbidden,
+});
+if (process.env.BRUTEFORCE==="yes"){
+    console.log('enabled brute force protection');
+    app.use(expbrute.getMiddleware({
+        key:"token"
+    }));
+}
 app.use(auth); //所有请求全部要检查权限，同时把权限相关的请求处理掉
 app.use('/user',userinfo); //用户信息模块
 app.use('/accounts',accounts);

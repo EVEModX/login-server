@@ -70,7 +70,7 @@ describe('main.js',function () {
                .expect(function (res) {
                    res=JSON.parse(res.text);
                    token2=res.token;
-                   console.log("token2 is "+token2);
+                   debug("token2 is "+token2);
                })
                .expect(200,done);
         });
@@ -109,21 +109,12 @@ describe('main.js',function () {
                .send({token:token2,token_req:token2})
                .expect(200,done);
         });
-        let addusers=[];
         it('should add user',function (done) {
             request.post('/login')
                 .send({username:loginname,password:password})
                 .expect(function (res) {
                     res=JSON.parse(res.text);
                     token=res.token;
-                    addusers=[
-                        {name:"with null nickname",args:{token:token,username:"test2",password:"test2"},expected:200},
-                        {name:"without existed username",args:{token:token,username:"test2",password:"test2"},expected:409},
-                        {name:"without null pass",args:{token:token,username:"test3",password:""},expected:400},
-                        {name:"without null username",args:{token:token,username:"",password:"test4"},expected:400},
-                        {name:"without blank username",args:{token:token,username:"    ",password:"test5"},expected:400},
-                        {name:"without whitespaces",args:{token:token,username:"tes t5",password:"Test5"},expected:400}
-                    ];
                 })
                 .expect(200,function (err) {
                     if (err) throw err;
@@ -132,14 +123,24 @@ describe('main.js',function () {
                         .expect(200,done);
                 });
         });
+        it('should not replace root user');
+        let addusers=[
+            {name:"with null nickname",args:{token:token,username:"test2",password:"test2"},expected:200},
+            {name:"without existed username",args:{token:token,username:"test2",password:"test2"},expected:409},
+            {name:"without null pass",args:{token:token,username:"test3",password:""},expected:400},
+            {name:"without null username",args:{token:token,username:"",password:"test4"},expected:400},
+            {name:"without blank username",args:{token:token,username:"    ",password:"test5"},expected:400},
+            {name:"without whitespaces",args:{token:token,username:"tes t5",password:"Test5"},expected:400}
+        ];
         addusers.forEach(function (test) {
             it('should add user '+test.name,function (done) {
+                test.args.token=token;
                 request.post('/register')
                    .send(test.args)
                    .expect(test.expected,done);
             });
         });
-        var test1Token,test1ID;
+        let test1Token,test1ID;
         it('should login the new user',function (done) {
             request.post('/login')
                 .send({username:"test1",password:"test1"})
