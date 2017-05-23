@@ -68,7 +68,7 @@ function addaccount(req,resp){
     try{
         eveacc=JSON.parse(eveacc);
     }catch(err){
-        if (typeof err===SyntaxError){
+        if (err instanceof SyntaxError){
             resp.status(400).end();
             stopExec=true;
         }
@@ -114,7 +114,7 @@ function editaccount(req,resp){
     try{
         eveacc=JSON.parse(eveacc);
     }catch(err){
-        if (typeof err===SyntaxError){
+        if (err instanceof SyntaxError){
             resp.status(400).write(JSON.stringify({error:"account format error"}));
             StopExec=true;
         }

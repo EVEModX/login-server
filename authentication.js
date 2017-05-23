@@ -57,8 +57,9 @@ function login(req,resp){
                     let expiretime=Math.floor(Date.now() / 1000)+config.security.tokenLivetime;
                     user.requireToken(expiretime,function(err,token){
                         if (err) {resp.status(500).end();console.log(err);return;}
-                        debug('login 200');
-                        resp.status(200).write(JSON.stringify({token:token.toString('hex'),expiretime:expiretime,userid:user.data.userid}));
+                        debug('login 200 token:'+token.toString('hex'));
+                        resp.status(200);
+                        resp.json({token:token.toString('hex'),expiretime:expiretime,userid:user.data.userid})
                         resp.end();
                     });
                 });
@@ -377,14 +378,14 @@ function authorization(req,resp,next){
     async.series([
         function (callback) {
             debug('authorize: '+req.path);
-            let pass=["/login"];
-            if (pass.indexOf(req.path)!=-1){
+            let pass=["/login","/user/getinfo"]; //无条件通过的请求地址
+            if (pass.indexOf(req.path)!=-1){ //无条件通过
                 callback(null);
-            }else if (isStatic(req.path)){
+            }else if (isStatic(req.path)){ //静态文件
                 callback(null);
-            } else if (_.isEmpty(req.user)){
+            } else if (_.isEmpty(req.user)){ //授权信息检查
                 callback(null,{status:401});
-            }else if (req.user.getID()===0){
+            }else if (req.user.getID()===0){ //是否为root？
                 callback(null);
             }else if (req.path==="/listtoken" || req.path==="/changepassword"){
                 calcPermission("user."+req.user.getID(),"user."+req.body.userid,"security_edit",function (err,result) {
@@ -411,7 +412,9 @@ function authorization(req,resp,next){
         }
         if (result===undefined || result.status===undefined){
             debug('authorize next');
-            req.brute.reset();
+            if (process.env.BRUTEFORCE==="yes"){
+                req.brute.reset();
+            }
             next();
         }else{
             debug('authorize '+result.status);
@@ -431,3 +434,4 @@ router.post('/changepassword',changepassword);
 router.post('/register',adduser);
 router.post('/listtoken',listToken);
 module.exports=router;
+//TODO:新增删除用户

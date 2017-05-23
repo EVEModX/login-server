@@ -180,6 +180,11 @@ describe('main.js',function () {
                 .send({token:test1Token,userid:0,newpassword:"root1"})
                 .expect(403,done);
         });
+        it('encounted url do not exist',function (done) {
+            request.post('/donotexist')
+                .send({token:test1Token})
+                .expect(404,done);
+        });
     });
     describe('accounts module',function () {
     });
