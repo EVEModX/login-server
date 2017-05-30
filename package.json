@@ -12,7 +12,8 @@
     "lodash": "4.17.4",
     "redis": "2.6.5",
     "sequelize": "^3.30.4",
-    "sqlite3": "^3.1.8"
+    "sqlite3": "^3.1.8",
+    "u2f":"^0.1.2"
   },
   "devDependencies": {
     "debug": "latest",
