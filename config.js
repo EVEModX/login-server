@@ -2,7 +2,8 @@
 /*
  * 网站配置文件
  * */
-var config={};
+"use strict";
+let config={};
 //开发设置
 config.debug=true;
 //服务器设置
@@ -15,4 +16,10 @@ config.security.pbkdf2_iter=100000;
 //redis 配置
 config.redis={};
 config.redis.port=6379;
+config.mysql={};
+config.mysql.host="localhost";
+config.mysql.port=3306;
+config.mysql.user="root";
+config.mysql.password="root";
+config.mysql.database="login-server";
 module.exports=config;

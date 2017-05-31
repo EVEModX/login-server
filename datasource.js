@@ -1,16 +1,16 @@
 /*
-* 抽象数据接口,sqlite3版本
+* 抽象数据接口,mysql版本
 * */
-const sqlite3=require("sqlite3").verbose();
+"use strict";
+//const sqlite3=require("sqlite3").verbose();
+const mysql=require('mysql');
 const _=require('lodash');
 const debug=require("debug")('datasource');
 const crypto=require("crypto");
 const config=require("./config");
 const async=require("async");
-let db=new sqlite3.Database(__dirname+"/test.sqlite3");
-db.on('trace',function (stmt) {
-    require('debug')('sqlite3')(stmt);
-});
+let db=mysql.createConnection(config.mysql);
+db.connect();
 /*
 * User接口 实现用户数据相关
 * */
@@ -29,7 +29,6 @@ function User(data){
 * User对象字段
 * username string 用户名
 * userid int 用户ID
-* nickname string 用户显示的昵称
 * password Buffer(16) 存储的密码hash
 * password_salt Buffer(16) 密码盐
 *
@@ -41,11 +40,11 @@ function User(data){
 * @callback 回调函数
 * */
 User.findById=function (id,callback) {
-    db.get("SELECT * FROM users WHERE userid=?",id,function(err,row){
+    db.query("SELECT * FROM users WHERE userid=?",[id],function(err,row){
         if (err) callback(err);
-        if (row===undefined) //没有找到对应用户
+        if (row[0]===undefined) //没有找到对应用户
             callback(null,undefined);
-        callback(null,new User(row));
+        callback(null,new User(row[0]));
     });
 };
 /*
@@ -53,15 +52,16 @@ User.findById=function (id,callback) {
 * callback(err,user) user:返回的用户对象，找不到返回undefined
 * */
 User.findByName=function (name,callback){
-    db.get("SELECT * FROM users WHERE username=?",name,function(err,row){
+    db.query("SELECT * FROM users WHERE username=?",[name],function(err,row){
         if (err){
             return callback(err);
         }
+        row=row[0];
         if (row===undefined){
             return callback(null,undefined);
         }
         if (new Date(row.expiretime)<new Date()){ //token过期
-            db.run("DELETE FROM tokens WHERE token=?",token,function(err) {
+            db.query("DELETE FROM tokens WHERE token=?",[token],function(err) {
                 if (err)
                     callback(err);
                 else
@@ -77,7 +77,8 @@ User.findByName=function (name,callback){
 * callback(err,user) user:返回的用户对象，找不到返回undefined
 * */
 User.findByToken=function (token,callback){
-    db.get("SELECT * FROM tokens WHERE token=?",token,function(err,row){
+    db.query("SELECT * FROM tokens WHERE token=?",[token],function(err,row){
+        row=row[0];
         if (err)
             callback(err);
         else if (row===undefined)
@@ -91,8 +92,9 @@ User.findByToken=function (token,callback){
 /*
  * 修改用户昵称 sync
  * @param name string 新的用户昵称
+ * @deprecated
  * */
-User.prototype.setNickname=function (name) {
+/*User.prototype.setNickname=function (name) {
         this.data.nickname=name;
 };
 /*
@@ -131,12 +133,12 @@ User.prototype.setPass=function (plainpass,callback){
 * @callback err:错误 token:返回的token(Buffer)
 * */
 User.prototype.requireToken=function (expire,callback){
-    var that=this;
+    let that=this;
     crypto.randomBytes(16,function(err,buf){
         if (err) callback(err);
-        db.run("INSERT into tokens (token,expiretime,userid) VALUES(?,?,?)",[buf.toString('hex'),expire,that.data.userid],function(err){
+        db.query("INSERT into tokens (token,expiretime,userid) VALUES(?,?,?)",[buf.toString('hex'),expire,that.data.userid],function(err){
             if (err===null) callback(null,buf);
-            else if (err.code==="SQLITE_CONSTRAINT") //有重复的token
+            else if (err.errno===1062) //有重复的token
                 this.requireToken(expire,callback);
             else
                 callback(err);
@@ -149,7 +151,7 @@ User.prototype.requireToken=function (expire,callback){
 * @callback err:错误
 * */
 User.clearToken=function (token,callback){
-    db.run("DELETE FROM tokens WHERE token=?",token,function(err){
+    db.query("DELETE FROM tokens WHERE token=?",[token],function(err){
         if (err)
             return callback(err);
         else
@@ -162,7 +164,7 @@ User.clearToken=function (token,callback){
 * @callback err:错误
 * */
 User.clearAllToken=function(userid, callback){
-    db.run("DELETE FROM tokens WHERE userid=?",userid,function(err){
+    db.query("DELETE FROM tokens WHERE userid=?",[userid],function(err){
         if (err)
             return callback(err);
         else
@@ -181,18 +183,10 @@ User.prototype.getID=function(){
 * */
 User.prototype.save=function(callback){ //把用户数据写回数据库
     let that=this;
-    let db_=new sqlite3.Database(__dirname+"/test.sqlite3");
-    db_.on('trace',function (stmt) {
-        require('debug')('sqlite3')(stmt);
-    });
+    let db_=mysql.createConnection(config.mysql);
     async.series([
         function (callback) {
-            db_.run("PRAGMA journal_mode = WAL;");
-            db_.configure('busyTimeout',100000);
-            callback();
-        },
-        function (callback) {
-            db_.run("BEGIN TRANSACTION",function (err) {
+            db_.query("BEGIN",function (err) {
                 if (err) callback(err);
                 else callback();
             });
@@ -200,9 +194,14 @@ User.prototype.save=function(callback){ //把用户数据写回数据库
         function (callback) {
             if (that.data.userid===undefined || that.data.userid===null && !that.data.username){
                 debug('save: insert');
-                db_.run("INSERT INTO users(username) VALUES (?)",that.data.username,function (err) {
+                db_.query("INSERT INTO users(username) VALUES (?)",[that.data.username],function (err) {
                     debug('callback on insert');
-                    if (err) {debug('error on insert+'+err);callback(err);}
+                    if (err) {
+                        debug('error on insert+'+err);
+                        if (err.errno===1062) //重复用户名
+                            err.__DUPLICATE=true;
+                        callback(err);
+                    }
                     else callback();
                 });
             }else
@@ -217,7 +216,7 @@ User.prototype.save=function(callback){ //把用户数据写回数据库
                 if (key==="password"||key==="password_salt"){
                     val=val.toString('hex');
                 }
-                db_.run("UPDATE users SET "+key+" = ? WHERE username= ?",[val,that.data.username],function (err) {
+                db_.query("UPDATE users SET ?? = ? WHERE username= ?",[key,val,that.data.username],function (err) {
                     if (err) callback2(err);
                     else callback2();
                 });
@@ -230,14 +229,14 @@ User.prototype.save=function(callback){ //把用户数据写回数据库
             });
         },function (callback) {
             debug('end transaction');
-            db_.run("END TRANSACTION",function (err) {
+            db_.query("COMMIT",function (err) {
                 debug("err"+err);
                 if (err) callback(err);
                 else callback();
             })
         }
     ],function (err) {
-        db_.close();
+        db_.end();
         debug('db_ closed');
         if (err)
         {
@@ -275,7 +274,7 @@ exports.Authorize={
         let perm=true;
         if (_.isEmpty(role) || _.isEmpty(resource) || _.isEmpty(action))
             return callback(new Error("args cannot be empty"));
-        db.run("INSERT INTO "+this.TABLE_NAME+" (role,resource,action,perm)" +
+        db.query("INSERT INTO "+this.TABLE_NAME+" (role,resource,action,perm)" +
             " VALUES(?,?,?,?)",[role,resource,action,perm],function (err,result) {
             if (err) return callback(err);
             else callback(null);
@@ -286,7 +285,7 @@ exports.Authorize={
         "use strict";
         if (_.isEmpty(role) || _.isEmpty(resource) || _.isEmpty(action))
             return callback(new Error("args cannot be empty"));
-        db.run("DELETE FROM "+this.TABLE_NAME+
+        db.query("DELETE FROM "+this.TABLE_NAME+
             " WHERE role LIKE ? AND resource LIKE ? AND action LIKE ?",[role,resource,action], function (err,result) {
             if (err) return callback(err);
             else return callback(null);
@@ -300,8 +299,9 @@ exports.Authorize={
         "use strict";
         if (_.isEmpty(role) || _.isEmpty(resource) || _.isEmpty(action))
             return callback(new Error("args cannot be empty"));
-        db.get("SELECT perm FROM "+this.TABLE_NAME+" WHERE role=? AND resource=? AND action=?",[role,resource,action],function (err,result) {
+        db.query("SELECT perm FROM "+this.TABLE_NAME+" WHERE role=? AND resource=? AND action=?",[role,resource,action],function (err,result) {
             if (err) return callback(err);
+            result=result[0];
             return callback(null,(result===undefined)?undefined:result.perm);
         });
     }

@@ -66,7 +66,7 @@ function login(req,resp){
             }else{
                 debug('login 401');
                 resp.status(401);
-                resp.write(JSON.stringify({error:"username and password mismatch"}));
+                resp.json({error:"username and password mismatch"});
                 resp.end();
             }
         });
@@ -223,14 +223,12 @@ function changepassword(req,resp){
  * 表单
  * @param {string} username 用户名
  * @param {string} password 明文密码
- * @param {string} [nickname] 昵称
  * */
 function adduser(req,resp){
     debug('adduser processing');
-    var newuser=new data.User();
+    let newuser=new data.User();
     newuser.data.username=req.body.username;
-    var plainpass=req.body.password;
-    newuser.data.nickname=req.body.nickname;
+    let plainpass=req.body.password;
     if (_.isEmpty(newuser.data.username) || !_.isString(newuser.data.username)|| newuser.data.username.match(/\s/) ||
         _.isEmpty(plainpass) || !_.isString(plainpass)){
         resp.status(400).write(JSON.stringify({error:"username or password missing"}));
@@ -259,17 +257,11 @@ function adduser(req,resp){
         }
     ],function (err,result) {
         if (err) {
-            if (err.errno===19){
-                //碰到SQL约束
-                if (err.message.indexOf("users.username")!==-1){
+            if (err.__DUPLICATE){
                     //用户名重名
-                    resp.status(409).write(JSON.stringify({error:"username existed"}));
+                    resp.status(409).json({error:"username existed"});
                     debug('adduser 409');
                     resp.end();
-                }else{
-                    debug('adduser 500');
-                    resp.status(500).end();
-                }
             }else{
                 debug('adduser 500 err:'+err);
                 resp.status(500).end();
@@ -340,10 +332,10 @@ function authentication(req, resp, next){
 * resource目前只有user.<id>
 * */
 function calcPermission(role,resource,action,callback) {
-    if (role==="user.0") return callback(null,true);
+    if (role==="user.1") return callback(null,true);
     let resultcb=function (err,results) {
         let ans=results.find(function (e) {
-            return e.value==1;
+            return e.value===1 || e.value==="true" || e.value===true;
         });
         return callback(ans!==undefined);
     };
@@ -379,13 +371,13 @@ function authorization(req,resp,next){
         function (callback) {
             debug('authorize: '+req.path);
             let pass=["/login","/user/getinfo"]; //无条件通过的请求地址
-            if (pass.indexOf(req.path)!=-1){ //无条件通过
+            if (pass.indexOf(req.path)!==-1){ //无条件通过
                 callback(null);
             }else if (isStatic(req.path)){ //静态文件
                 callback(null);
             } else if (_.isEmpty(req.user)){ //授权信息检查
                 callback(null,{status:401});
-            }else if (req.user.getID()===0){ //是否为root？
+            }else if (req.user.getID()===1){ //是否为root？
                 callback(null);
             }else if (req.path==="/listtoken" || req.path==="/changepassword"){
                 calcPermission("user."+req.user.getID(),"user."+req.body.userid,"security_edit",function (err,result) {

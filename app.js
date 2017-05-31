@@ -1,4 +1,5 @@
 /* Use UTF-8 to operate this file*/
+"use strict";
 const express=require('express');
 const bodyParser=require('body-parser');
 const auth=require('./authentication');

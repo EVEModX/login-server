@@ -16,16 +16,12 @@ const debug=require('debug')('accounts');
 const express=require('express');
 const auth=require('./authentication');
 const _=require('lodash');
-const sqlite3=require('sqlite3').verbose();
 const ds=require('./datasource');
 const async=require('async');
 let router=express.Router();
-let db=new sqlite3.Database(__dirname+"/test.sqlite3").once('error',function (err) {
-    console.error('error on opening '+__dirname+"/test.sqlite3");
-});
-db.on('trace',function (sql) {
-    debug('SQL RUNNING:'+sql);
-});
+const mysql=require("mysql");
+const config=require("./config");
+let db=mysql.createConnection(config.mysql);
 /*
 * 权限系统：(accounts.*)
 *   - accounts.add
@@ -41,14 +37,6 @@ db.on('trace',function (sql) {
 * */
 const TABLE_NAME="eve_accounts";
 const PRIV_TABLE_NAME="privileges";
-const SQL_CREATE_TABLE=
-    "CREATE TABLE eve_accounts ("+
-    "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,"+
-    "owner INTEGER NOT NULL,"+
-    "username TEXT,"+
-    "password TEXT,"+
-    "CONSTRAINT one_account UNIQUE(username,password,owner),"+
-    ");";
 /*
 * 添加账号密码
 * 授权验证:
@@ -82,14 +70,15 @@ function addaccount(req,resp){
         return;
     }
 	let args=[req.body.account_owner || req.user.getID(),eveacc.username, eveacc.password];
-	db.run("INSERT INTO "+TABLE_NAME+" (owner,username,password) VALUES (?,?,?)", args,function (err) {
+	db.query("INSERT INTO "+TABLE_NAME+" (owner,username,password) VALUES (?,?,?)", args,function (err) {
             if (err) {resp.status(500).end();debug(err);return;}
             //TODO:处理UNIQUE冲突
             debug('account set, returning id');
-            db.get("SELECT id FROM "+TABLE_NAME+" WHERE owner=? AND username=? AND password=?",args,function (err,row) {
+            db.query("SELECT id FROM "+TABLE_NAME+" WHERE owner=? AND username=? AND password=?",args,function (err,row) {
+                row=row[0];
                 debug(row);
                 if (err){resp.status(500).end();return;}
-                resp.status(200).write(JSON.stringify({id:row.id}));
+                resp.status(200).json({id:row.id});
                 resp.end();
             });
         });
@@ -121,7 +110,7 @@ function editaccount(req,resp){
     }
     debug('commit to database');
     if (StopExec) return;
-    db.run("UPDATE "+TABLE_NAME+" SET username=?,password=? WHERE id=?",[eveacc.username,eveacc.password,aid],function (err){
+    db.query("UPDATE "+TABLE_NAME+" SET username=?,password=? WHERE id=?",[eveacc.username,eveacc.password,aid],function (err){
         if (err) {resp.status(500).end();debug(err);return;}
         resp.status(200).end();
     });
@@ -137,7 +126,7 @@ function deleteaccount(req,resp) {
         resp.status(400).end();
         return;
     }
-    db.run("DELETE * FROM ? WHERE id=?",[TABLE_NAME,aid],function (err) {
+    db.query("DELETE * FROM ? WHERE id=?",[TABLE_NAME,aid],function (err) {
         if (err) {resp.status(500).end();return;}
         ds.Authorize.delPermission("%","account:"+aid.toString(),"%",function (err) {
             if (err) {resp.status(500).end();return;}
@@ -162,7 +151,8 @@ function requesttoken(req,resp){
 	    return;
     }
 	const uri="https://auth.eve-online.com.cn/oauth/authorize?client_id=eveclient&scope=eveClientLogin&response_type=token&redirect_uri=https%3A%2F%2Fauth.eve-online.com.cn%2Flauncher%3Fclient_id%3Deveclient&lang=zh&mac=None";
-	db.get("SELECT * FROM "+TABLE_NAME+" WHERE id=?",aid,function (err,reply) {
+	db.query("SELECT * FROM "+TABLE_NAME+" WHERE id=?",[aid],function (err,reply) {
+	    reply=reply[0];
 		if (err) {resp.status(500).end();debug('requesttoken err:'+JSON.stringify(err));return;}
 		if (reply===undefined){
 		    resp.status(404);
@@ -270,7 +260,7 @@ function get_accounts(req, resp) {
             rt.add(result[i]);
         }
         resp.status(200);
-        resp.write(JSON.stringify([...rt]));
+        resp.json(rt);
     });
 }
 /*
@@ -282,7 +272,7 @@ function get_accounts(req, resp) {
 * */
 function calcPermission(role,resource,action,callback) {
     debug("calcPerm: role->"+role+" resource->"+resource+" action->"+action);
-    if (role==="user.0") return callback(null,true);
+    if (role==="user.1") return callback(null,true);
     let resultcb=function (err,results) {
         let ans=results.find(function (e) {
             return e.value==1;
@@ -297,10 +287,11 @@ function calcPermission(role,resource,action,callback) {
             return;
         }
         //debug("priv's uid:"+uid+" aid:"+aid);
-        db.get("SELECT * FROM "+TABLE_NAME+" WHERE id= ? AND owner= ?",[aid,uid],function (err,result) {
+        db.query("SELECT owner FROM "+TABLE_NAME+" WHERE id= ?",[aid],function (err,result) {
             if (err){debug("default priv's err"+err);reject({code:500});return;}
             //debug("default priv's result:"+JSON.stringify(result));
-            if (result!==undefined) resolve();
+            result=result[0];
+            if (result.owner===uid) resolve();
             else reject({code:403});
         });
     });

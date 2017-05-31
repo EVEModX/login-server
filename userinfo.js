@@ -7,11 +7,12 @@
 "use strict";
 const express = require("express");
 const data = require("./datasource");
+const config = require("./config");
 const debug = require('debug')('userinfo');
 const _ = require("lodash");
 let router = express.Router();
-const sqlite3 = require('sqlite3');
-let db = new sqlite3.Database(__dirname + "/test.sqlite3");
+const mysql=require("mysql");
+let db = mysql.createConnection(config.mysql);
 const TABLE_NAME = "userinfo"; //数据表名
 /*
  * 表结构
@@ -21,10 +22,11 @@ const TABLE_NAME = "userinfo"; //数据表名
  * )
  * */
 
-function getUserinfo_sqlite3(userid) {
+function getUserinfo_mysql(userid) {
     return new Promise((resolve, reject) => {
-        db.get("SELECT * FROM " + TABLE_NAME + " WHERE id= ?", userid, function (err, row) {
+        db.query("SELECT * FROM " + TABLE_NAME + " WHERE id= ?", [userid], function (err, row) {
             if (err) reject({status: 500, msg: "Error in database"});
+            row=row[0];
             if (row === undefined) reject({status: 404});
             try {
                 row = JSON.parse(row.data);
@@ -56,7 +58,7 @@ function getUserinfo(req, resp) {
         }
         resolve({uid: uid, info_req: info_req});
     });
-    p.then(data => getUserinfo_sqlite3(data.uid)
+    p.then(data => getUserinfo_mysql(data.uid)
         .then(row => {
             resp.status(200);
             let result = {};
@@ -74,9 +76,9 @@ function getUserinfo(req, resp) {
         resp.end();
     });
 }
-function setUserinfo_sqlite3(userid, userinfo) {
+function setUserinfo_mysql(userid, userinfo) {
     return new Promise((resolve, reject) => {
-        db.run("INSERT INTO " + TABLE_NAME + " (id,data) VALUES(?,?)", [userid, userinfo], function (err) {
+        db.query("INSERT INTO " + TABLE_NAME + " (id,data) VALUES(?,?)", [userid, userinfo], function (err) {
             if (err) reject({status: 500, msg: "database error"});
             else resolve();
         });
@@ -100,21 +102,26 @@ function setUserinfo(req, resp) {
         } catch (e) {
             if (e instanceof SyntaxError)
                 reject({status: 400, msg: "missing info_req"});
+            else
+                reject({status: 500, msg:"unknown error"});
         }
         resolve({uid: uid, info: info});
     });
-    p.then(data => setUserinfo_sqlite3(data.uid, data.info)
-        .then(err => {
-            if (err === undefined) {
-                resp.status(200);
-                resp.end();
-            } else {
-                resp.status(err.status);
-                resp.write(err.msg);
-                resp.end();
-            }
+    p.then(data => setUserinfo_mysql(data.uid, data.info)
+        .then(() => {
+            resp.status(200);
+            resp.end();
+            debug('setUserinfo 200');
+        }).catch((err)=>{
+            resp.status(err.status||500);
+            resp.write(err.msg || "unknown err at setUserinfo");
+            resp.end();
         })
-    )
+    ).catch((err)=>{
+        resp.status(err.status || 500);
+        resp.write(err.msg || "unknown error at setUserinfo");
+        resp.end();
+    });
 }
 function authorziation(req, resp, next) {
     if (req.path === '/setinfo') {

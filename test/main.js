@@ -2,21 +2,23 @@
 /*
 * 主测试模块
 * */
+"use strict";
 var app=require('../app');
 var request=require('supertest')('http://localhost:8080');
 var should=require('should');
 var debug=require('debug')('test');
-var sqlite3=require('sqlite3');
 var async = require("async");
+const mysql=require("mysql");
+const config=require('../config');
 
 describe('main.js',function () {
     var loginname="root",password="root",token,token2;
     before('init database',function(done){
-        var db=new sqlite3.Database(__dirname+"/../test.sqlite3");
-        db.run("DELETE FROM tokens",function () {
-            db.run("DELETE FROM users WHERE NOT username=\'root\'",function (err) {
+        let db=mysql.createConnection(config.mysql);
+        db.query("DELETE FROM tokens",function () {
+            db.query("DELETE FROM users WHERE NOT username='root'",function (err) {
                 if (err) throw err;
-                db.close(done);
+                db.end(()=>{done()});
             });
         });
     });
@@ -55,7 +57,6 @@ describe('main.js',function () {
         });
         it('should sign in when user/password is right',function (done) {
             request.post('/login')
-               .type('form')
                .send({username:loginname,password:password})
                .expect(function (res) {
                    res=JSON.parse(res.text);
@@ -119,7 +120,7 @@ describe('main.js',function () {
                 .expect(200,function (err) {
                     if (err) throw err;
                     request.post('/register')
-                        .send({token:token,username:"test1",password:"test1",nickname:"test1"})
+                        .send({token:token,username:"test1",password:"test1"})
                         .expect(200,done);
                 });
         });

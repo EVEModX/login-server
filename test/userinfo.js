@@ -3,7 +3,8 @@ let app = require('../app');
 const request = require('supertest')('http://localhost:8080');
 const should = require('should');
 const debug = require('debug')('test');
-const sqlite3 = require('sqlite3');
+const mysql= require('mysql');
+const config = require('../config');
 const async = require("async");
 function login(user, pass) {
     return new Promise((resolve, reject) => {
@@ -27,21 +28,24 @@ function login(user, pass) {
 }
 describe('userinfo Module', function () {
     let token = "", userid = 0;
-    before('init user', function (done) {
-        login("root", "root").then(data => {
-            let db = new sqlite3.Database(__dirname + "/../test.sqlite3");
-            db.run("DELETE FROM users WHERE username=\'info-1\'", (err) => {
-                if (err) throw err;
-                request.post("/register").send({token: data.token, username: "info-1", password: "info-1"})
-                    .expect(200).then(() => {
-                    login("info-1", "info-1").then(data => {
-                        token = data.token;
-                        userid = data.userid;
-                        done();
-                    }).catch((err) => debug(err));
-                }).catch((err) => debug(err));
-            });
-        }).catch((err) => debug(err));
+    before('init user', function () {
+        return new Promise((resolve,reject)=>{
+            login("root", "root").then(data => {
+                let db = mysql.createConnection(config.mysql);
+                db.query("DELETE FROM users WHERE username=\'info-1\'", (err) => {
+                    if (err) reject(err);
+                    request.post("/register").send({token: data.token, username: "info-1", password: "info-1"})
+                        .expect(200).end((err,res) => {
+                            if (err) reject(err);
+                            login("info-1", "info-1").then(data => {
+                                token = data.token;
+                                userid = data.userid;
+                                resolve();
+                            })
+                        })
+                });
+            })
+        });
     });
     it('should set user info', function (done) {
         let userinfo = JSON.stringify({email: "foo@bar.com", age: 20, birthday: "1970-1-1"});

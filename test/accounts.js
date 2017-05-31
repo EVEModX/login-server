@@ -2,12 +2,14 @@
 /*
 * account模块测试集
 * */
+"use strict";
 let app=require('../app');
 const request=require('supertest')('http://localhost:8080');
 const should=require('should');
 const debug = require('debug')('test');
-const sqlite3 = require('sqlite3');
+const mysql = require('mysql');
 const async = require("async");
+const config = require('../config');
 describe('accounts module',function () {
     let tokens=[],uids=[];
     let roottoken;
@@ -16,22 +18,22 @@ describe('accounts module',function () {
                {username:"p1",password:"p2"},
                {username:"p2",password:"p2"},
                {username:"fbp",password:"fbp"},];
-    let db=new sqlite3.Database(__dirname+"/../test.sqlite3");
+    let db=mysql.createConnection(config.mysql);
     let aid1=0;
     before('clear all accounts and privileges',function (done) {
         this.timeout(10000);
         async.series([
             function (cb) {
                 debug('cleaning database');
-                db.run("DELETE FROM tokens",function (err) {
+                db.query("DELETE FROM tokens",function (err) {
                     if (err) cb(err);
-                    db.run("DELETE FROM users WHERE NOT username=\'root\'",function (err) {
+                    db.query("DELETE FROM users WHERE NOT username=\'root\'",function (err) {
                         if (err) cb(err);
-                        db.run("DELETE FROM eve_accounts",function (err) {
+                        db.query("DELETE FROM eve_accounts",function (err) {
                             if (err) cb(err);
-                            db.run("DELETE FROM privileges",function (err) {
+                            db.query("DELETE FROM privileges",function (err) {
                                 if (err) cb(err);
-                                db.close(cb);
+                                db.end([],cb);
                             })
                         })
                     });
