@@ -57,6 +57,11 @@ describe('userinfo Module', function () {
             .expect(200)
             .expect({email: "foo@bar.com"}, done);
     });
+    it('should get user info by token without userid',(done)=>{
+        request.post("/user/getinfo").send({token:token,info_req:"{\"email\":\"\"}"})
+            .expect(200)
+            .expect({email: "foo@bar.com"}, done);
+    });
     it('should process wrong requests',done => {
         request.post("/user/getinfo").send({userid:userid,info_req:"{"})
             .expect(400,done);

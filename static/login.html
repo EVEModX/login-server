@@ -2,17 +2,18 @@
 <head>
     <meta charset="utf-8" />
     <title>用户登录</title>
-    <script src="http://ajax.aspnetcdn.com/ajax/jQuery/jquery-3.1.1.min.js"></script>
+    <script src="https://ajax.aspnetcdn.com/ajax/jQuery/jquery-3.1.1.min.js"></script>
     <script src="./js.cookie.js"></script>
 </head>
 <script>
+    "use strict";
     function login(){
-        var postdata={};
+        let postdata={};
         postdata.username=jQuery('input#username').val();
         postdata.password=jQuery('input#password').val();
         jQuery.post('./login',postdata)
-        .done(function (data){
-            var resp=JSON.parse(data);
+        .done((data)=>{
+            let resp=data;
             if (resp.error===undefined) {
                 Cookies.set("username",postdata.username);
                 Cookies.set("token",resp.token);
@@ -22,8 +23,16 @@
             }
         }).fail(function(data){
             console.log("error handle:"+data.status);
-            var resp=JSON.parse(data.responseText);
-            jQuery("#result").html(resp.error);
+            let resp={};
+            try{
+                resp=JSON.parse(data.responseText);
+            }catch(e){
+                if (e instanceof SyntaxError){
+                    console.log("response parse error")
+                    resp={};resp.error="data error";
+                }
+            }
+            jQuery("#result").html((resp.error || "no response"));
         });
     }
 </script>

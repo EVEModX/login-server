@@ -7,6 +7,7 @@
     <script src="./js.cookie.js"></script>
 </head>
 <script>
+    "use strict";
     function logout(){
         var token=Cookies.get("token");
         jQuery.post("./logout",{token:token,token_req:token},function (data) {
@@ -25,8 +26,8 @@
     if (token===null)
         jQuery("#username").html("游客");
     else {
-        jQuery.post("./user/getinfo",{username:username,token:token,username_req:username},function (data){
-            var user=jQuery.parseJSON(data);
+        jQuery.post("./user/getinfo",{token:token,info_req:JSON.stringify({nickname:""})},function (data){
+            let user=data;
             if (data.error===undefined) {
                 jQuery("#username").html(user.nickname);
                 jQuery("a#login").css("display","none");
@@ -61,8 +62,8 @@
 <a id="logout" onclick="logout()" style="display:none">注销</a>
 <div id="adduser" style="display: none;">添加用户
     <form>用户名<input type="text" id="new_un"/><br/>
-        密码<input type="text" id="new_pw"><br/>
-        昵称<input type="text" id="new_nn"><br/>
+        密码<input type="text" id="new_pw"/><br/>
+        昵称<input type="text" id="new_nn"/><br/>
         <input type="button" name="submit" onclick="adduser()" value="注册"/><br/>
         <span id="register_result"></span>
     </form>

@@ -286,10 +286,8 @@ function calcPermission(role,resource,action,callback) {
             reject({code:400});
             return;
         }
-        //debug("priv's uid:"+uid+" aid:"+aid);
         db.query("SELECT owner FROM "+TABLE_NAME+" WHERE id= ?",[aid],function (err,result) {
             if (err){debug("default priv's err"+err);reject({code:500});return;}
-            //debug("default priv's result:"+JSON.stringify(result));
             result=result[0];
             if (result.owner===uid) resolve();
             else reject({code:403});
