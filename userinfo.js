@@ -46,7 +46,7 @@ function getUserinfo_mysql(userid) {
  * */
 function getUserinfo(req, resp) {
     let p = new Promise((resolve, reject) => {
-        let uid = req.body.userid || req.user.getID(),
+        let uid = req.body.userid || (req.user!==undefined?req.user.getID():undefined),
             info_req = req.body.info_req;
         if (!_.isNumber(uid) || !_.isFinite(uid))
             reject({status: 400, msg: "missing uid"});

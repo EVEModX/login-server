@@ -66,6 +66,10 @@ describe('userinfo Module', function () {
         request.post("/user/getinfo").send({userid:userid,info_req:"{"})
             .expect(400,done);
     });
+    it('should return 400 if token is not supplied',done => {
+        request.post("/user/getinfo").send({info_req:"{\"email\":\"\"}"})
+            .expect(400,done);
+    });
     it('should return 404 if user don\'t exist',done=>{
         request.post("/user/getinfo").send({userid:-1,info_req:"{\"email\":\"\"}"})
             .expect(404,done);

@@ -4,8 +4,18 @@
     <title>用户登录</title>
     <script src="https://ajax.aspnetcdn.com/ajax/jQuery/jquery-3.1.1.min.js"></script>
     <script src="./js.cookie.js"></script>
+    <script src="./cookie.js"></script>
 </head>
 <script>
+    function getParameterByName(name, url) {
+        if (!url) url = window.location.href;
+        name = name.replace(/[\[\]]/g, "\\$&");
+        var regex = new RegExp("[?&]" + name + "(=([^&#]*)|&|#|$)"),
+            results = regex.exec(url);
+        if (!results) return null;
+        if (!results[2]) return '';
+        return decodeURIComponent(results[2].replace(/\+/g, " "));
+    }
     "use strict";
     function login(){
         let postdata={};
@@ -18,8 +28,9 @@
                 Cookies.set("username",postdata.username);
                 Cookies.set("token",resp.token);
                 Cookies.set("expiretime",resp.expiretime);
+                docCookies.setItem("token",resp.token,resp.expiretime,"/","");
                 jQuery("#result").html("登录成功");
-                window.location="/index.html";
+                window.location.replace(getParameterByName("redirect") || "./index.html");
             }
         }).fail(function(data){
             console.log("error handle:"+data.status);
@@ -28,7 +39,7 @@
                 resp=JSON.parse(data.responseText);
             }catch(e){
                 if (e instanceof SyntaxError){
-                    console.log("response parse error")
+                    console.log("response parse error");
                     resp={};resp.error="data error";
                 }
             }
