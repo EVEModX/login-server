@@ -69,7 +69,7 @@ describe('accounts module',function () {
             if (err) throw err;
             debug('cleared all accounts and ready for test');
             for (let i=0;i<tokens.length;++i){
-                console.log("uid:"+uids[i]+" username:"+users[i].username+" token:"+tokens[i]);
+                debug("uid:"+uids[i]+" username:"+users[i].username+" token:"+tokens[i]);
             }
             done();
         });
@@ -87,7 +87,7 @@ describe('accounts module',function () {
         request.post('/accounts/login').send({token:token,account_id:aid})
             .expect(200,exp,cb);
     };
-    it('should saved eve account',function (done) {
+    it('should access eve account (in debug mode)',function (done) {
         chklogin(tokens[0],aid1,{username:"test",password:"test"},done);
     });
     it('should edit account',function (done) {

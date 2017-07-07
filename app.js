@@ -19,7 +19,7 @@ let expbrute=new ExpBrute(store,{
     lifetime:3600,
     failCallback:ExpBrute.FailForbidden,
 });
-if (process.env.BRUTEFORCE==="yes"){
+if (process.env.BRUTEFORCE==="yes" || process.env.NODE_ENV==="production"){
     console.log('enabled brute force protection');
     app.use(expbrute.getMiddleware({
         key:"token"
@@ -38,4 +38,5 @@ app.use(express.static('static')); //前面的都不抓说明请求的静态文�
 });*/
 app.listen(cfg.server.listenport,function(){
     console.log("Server Started");
+    console.log("RUNNING in "+(process.env.NODE_ENV==='production'? 'production mode ': 'develop mode'))
 });

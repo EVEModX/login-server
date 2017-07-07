@@ -3,6 +3,14 @@ const mysql=require("mysql");
 const config=require("./config");
 const crypto=require("crypto");
 let db=mysql.createConnection(config.mysql);
+
+db.connect(err =>{
+    if (!err) return;
+    console.log("Error in connecting");
+    console.log(err.code);
+    if (err.fatal) process.exit();
+});
+
 let tables=[];
 tables.push("DROP TABLE IF EXISTS users");
 tables.push("CREATE TABLE users(" +
@@ -45,6 +53,7 @@ for (let i=0;i<tables.length;i++){
         }
     });
 }
+console.log("table created");
 let regroot=new Promise((resolve,reject)=>{
     crypto.randomBytes(16,(err,buf)=>{
         if (err) reject(err);
@@ -60,6 +69,6 @@ let regroot=new Promise((resolve,reject)=>{
 });
 console.log("Initialing Database...");
 regroot.then(()=>{
-    console.log("Done.");
+    console.log("root user created.\nDone.");
     process.exit();
 });

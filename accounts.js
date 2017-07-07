@@ -141,8 +141,10 @@ function deleteaccount(req,resp) {
 * 表单
 *   :param token 用户token
 *   :param account_id 请求的EVE账号的ID
+*   :param uri_type 1:国服 2:欧服
+* 测试时直接回复用户名密码
 * */
-//TODO:实现
+//TODO:实现国服/欧服
 function requesttoken(req,resp){
 	const aid=req.body.account_id;
 	debug('requesting token of '+aid);
@@ -151,6 +153,9 @@ function requesttoken(req,resp){
 	    return;
     }
 	const uri="https://auth.eve-online.com.cn/oauth/authorize?client_id=eveclient&scope=eveClientLogin&response_type=token&redirect_uri=https%3A%2F%2Fauth.eve-online.com.cn%2Flauncher%3Fclient_id%3Deveclient&lang=zh&mac=None";
+	if (process.env.NODE_ENV === 'production'){
+
+    }else {
 	db.query("SELECT * FROM "+TABLE_NAME+" WHERE id=?",[aid],function (err,reply) {
 	    reply=reply[0];
 		if (err) {resp.status(500).end();debug('requesttoken err:'+JSON.stringify(err));return;}
@@ -165,6 +170,7 @@ function requesttoken(req,resp){
 		resp.json(reply);
 		resp.end();
     });
+    }
 }
 /*
 * 用户授权其他人使用EVE账号
@@ -402,3 +408,5 @@ router.post('/login',requesttoken);
 router.post('/revoke',revokeaccess);
 router.post('/give',giveaccess);
 module.exports=router;
+/*
+* */
